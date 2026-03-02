@@ -1,0 +1,69 @@
+# Node
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+build/
+frontend/.next/
+
+# Env files
+.env
+**/.env
+Backend/.env
+frontend/.env
+.env.local
+.env.*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor directories and files
+.vscode/
+.idea/
+
+# Misc
+coverage/
+coverage/**
+*.log
+
+# Next.js
+.next/
+out/
+
+# Typescript
+*.tsbuildinfo
+
+# Mac
+.DS_Store
+
+# Local env secrets
+.envrc
+
+# Ignore lockfiles if you prefer (optional)
+# package-lock.json
+yarn.lock
+
+# JetBrains
+*.iml
+
+# generated
+public/uploads/
+
+# Jetpack / vscode settings
+.settings/
+
+# npm artifacts
+.npm/
+
+# temp
+tmp/
+
+# vscode workspace
+*.code-workspace
