@@ -1,22 +1,17 @@
 import mongoose from 'mongoose';
-import dotenv from 'dotenv';
-
-// Load environment variables
-dotenv.config();
-
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
-  throw new Error("❌ MONGODB_URI is missing in your .env file");
-}
+import env from './env';
+import logger from './logger';
 
 export const connectDB = async (): Promise<void> => {
   try {
-    await mongoose.connect(MONGODB_URI);
-    console.log('✅ MongoDB connected successfully');
-    console.log(`📊 Database: ${MONGODB_URI}`);
+    await mongoose.connect(env.MONGODB_URI, {
+      family: 4,
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000,
+    });
+    logger.info('✅ MongoDB connected successfully');
   } catch (error) {
-    console.error('❌ MongoDB connection error:', error);
+    logger.error('❌ MongoDB connection error', { error });
     process.exit(1);
   }
 };
@@ -24,8 +19,8 @@ export const connectDB = async (): Promise<void> => {
 export const disconnectDB = async (): Promise<void> => {
   try {
     await mongoose.disconnect();
-    console.log('✅ MongoDB disconnected successfully');
+    logger.info('✅ MongoDB disconnected successfully');
   } catch (error) {
-    console.error('❌ MongoDB disconnection error:', error);
+    logger.error('❌ MongoDB disconnection error', { error });
   }
 };

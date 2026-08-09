@@ -1,43 +1,44 @@
 import express from 'express';
-import { body } from 'express-validator';
 import JobController from '../controllers/JobController';
+import { validate } from '../middleware/validate';
+import { authenticate, optionalAuth, requireVerified } from '../middleware/auth';
+import { reportLimiter, voteLimiter } from '../middleware/rateLimiter';
+import {
+  extractJobUrlSchema,
+  createJobSchema,
+  updateJobSchema,
+  voteSchema,
+  addReviewSchema,
+  paginationSchema,
+  jobIdParamSchema,
+  companyParamSchema,
+} from '../validators/job.schema';
 
 const router = express.Router();
 
-router.get('/', JobController.getAllJobs);
-router.get('/:id', JobController.getJobById);
-router.post(
-  '/',
-  [
-    body('title').notEmpty().withMessage('Title is required'),
-    body('company').notEmpty().withMessage('Company is required'),
-    body('location').notEmpty().withMessage('Location is required'),
-    body('jobUrl').isURL().withMessage('Valid job URL is required'),
-    body('description').notEmpty().withMessage('Description is required'),
-    body('isFake').optional().isBoolean().withMessage('isFake must be a boolean'),
-  ],
-  JobController.createJob
-);
-router.post(
-  '/:id/vote',
-  [
-    body('userId').notEmpty().withMessage('User ID is required'),
-    body('voteType').isIn(['upvote', 'downvote']).withMessage('Vote type must be upvote or downvote'),
-  ],
-  JobController.vote
-);
-router.post(
-  '/:id/reviews',
-  [
-    body('rating').isInt({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5'),
-    body('comment').notEmpty().withMessage('Comment is required'),
-    body('author').notEmpty().withMessage('Author is required'),
-  ],
-  JobController.addReview
-);
-router.get('/:id/reviews', JobController.getReviewsByJobId);
-router.get('/company/:company', JobController.getJobsByCompany);
-router.get('/filter/fake', JobController.getFakeJobs);
-router.get('/filter/real', JobController.getRealJobs);
+// Public read routes (with optional auth for personalization)
+router.get('/', validate(paginationSchema), JobController.getAllJobs);
+router.get('/filter/fake', validate(paginationSchema), JobController.getFakeJobs);
+router.get('/filter/real', validate(paginationSchema), JobController.getRealJobs);
+router.get('/company/:company', validate(companyParamSchema), validate(paginationSchema), JobController.getJobsByCompany);
+router.get('/:id', validate(jobIdParamSchema), JobController.getJobById);
+router.get('/:id/reviews', validate(jobIdParamSchema), JobController.getReviewsByJobId);
 
-export default router; 
+// Protected write routes
+router.post('/extract', authenticate, requireVerified, validate(extractJobUrlSchema), JobController.extractJobUrl);
+router.post('/', authenticate, requireVerified, reportLimiter, validate(createJobSchema), JobController.createJob);
+
+// Finding 1.3 / 11.1 — edit and delete (owner or admin)
+router.put('/:id', authenticate, validate(jobIdParamSchema), validate(updateJobSchema), JobController.updateJob);
+router.delete('/:id', authenticate, validate(jobIdParamSchema), JobController.deleteJob);
+
+// Voting
+router.post('/:id/vote', authenticate, requireVerified, voteLimiter, validate(jobIdParamSchema), validate(voteSchema), JobController.vote);
+router.get('/:id/vote', authenticate, validate(jobIdParamSchema), JobController.getUserVote);
+
+// Reviews
+router.post('/:id/reviews', authenticate, requireVerified, validate(jobIdParamSchema), validate(addReviewSchema), JobController.addReview);
+// Finding 11.2 — delete review (owner or admin)
+router.delete('/:id/reviews/:reviewId', authenticate, requireVerified, validate(jobIdParamSchema), JobController.deleteReview);
+
+export default router;

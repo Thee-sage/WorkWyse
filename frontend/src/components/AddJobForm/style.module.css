@@ -146,6 +146,199 @@
   font-style: italic;
 }
 
+/* ─── URL Row with Auto Fill Button ────────────────────────────── */
+
+.urlRow {
+  display: flex;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+.urlInput {
+  flex: 1;
+  padding: 0.875rem 1rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 0.75rem;
+  font-size: 1rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  min-width: 0;
+}
+
+.urlInput:hover {
+  border-color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.urlInput:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 
+    0 0 0 3px rgba(59, 130, 246, 0.1),
+    0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 1);
+  transform: translateY(-1px);
+}
+
+.urlInput::placeholder {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.autoFillButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.25rem;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  color: white;
+  border: none;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 6px -1px rgba(139, 92, 246, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.autoFillButton::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+.autoFillButton:hover:not(:disabled)::before {
+  left: 100%;
+}
+
+.autoFillButton:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px -5px rgba(139, 92, 246, 0.4);
+}
+
+.autoFillButton:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.autoFillButton:disabled {
+  background: linear-gradient(135deg, #c4b5fd 0%, #a78bfa 100%);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.autoFillIcon {
+  font-size: 1.1rem;
+}
+
+/* ─── Loading Spinner ──────────────────────────────────────────── */
+
+.spinner {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ─── Status Badges ────────────────────────────────────────────── */
+
+.badgeSuccess {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border: 1.5px solid #34d399;
+  border-radius: 0.75rem;
+  color: #065f46;
+  font-size: 0.875rem;
+  font-weight: 600;
+  animation: slideIn 0.3s ease-out;
+}
+
+.badgeMedium {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border: 1.5px solid #fbbf24;
+  border-radius: 0.75rem;
+  color: #92400e;
+  font-size: 0.875rem;
+  font-weight: 600;
+  animation: slideIn 0.3s ease-out;
+}
+
+.badgeWarning {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%);
+  border: 1.5px solid #f97316;
+  border-radius: 0.75rem;
+  color: #9a3412;
+  font-size: 0.875rem;
+  font-weight: 600;
+  animation: slideIn 0.3s ease-out;
+}
+
+.badgeError {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
+  border: 1.5px solid #ef4444;
+  border-radius: 0.75rem;
+  color: #991b1b;
+  font-size: 0.875rem;
+  font-weight: 600;
+  animation: slideIn 0.3s ease-out;
+}
+
+.badgeIcon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ─── Checkbox ─────────────────────────────────────────────────── */
+
 .checkboxContainer {
   display: flex;
   align-items: center;
@@ -199,6 +392,8 @@
   border-radius: 0.5rem;
   border-left: 3px solid #6b7280;
 }
+
+/* ─── Buttons ──────────────────────────────────────────────────── */
 
 .buttonContainer {
   display: flex;
@@ -298,6 +493,8 @@
   transform: translateY(0);
 }
 
+/* ─── Not Logged In ────────────────────────────────────────────── */
+
 .notLoggedInContainer {
   text-align: center;
   padding: 2rem 1.5rem;
@@ -326,7 +523,8 @@
   text-decoration: none;
 }
 
-/* Responsive adjustments */
+/* ─── Responsive ───────────────────────────────────────────────── */
+
 @media (max-width: 640px) {
   .container {
     padding: 1.5rem;
@@ -337,6 +535,14 @@
     font-size: 1.5rem;
   }
   
+  .urlRow {
+    flex-direction: column;
+  }
+
+  .autoFillButton {
+    justify-content: center;
+  }
+  
   .buttonContainer {
     flex-direction: column;
   }
@@ -345,4 +551,4 @@
   .clearButton {
     width: 100%;
   }
-} 
+}

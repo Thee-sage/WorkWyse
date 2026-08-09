@@ -1,72 +1,123 @@
+import dns from 'dns';
+dns.setDefaultResultOrder('ipv4first');
+
+// Load and validate env FIRST — crashes if misconfigured
+import env from './config/env';
+import logger from './config/logger';
+
+// ─── TraceOps Observability ──────────────────────────────────────────
+import TraceOps from 'traceops-sdk';
+if (env.TRACEOPS_ENDPOINT) {
+  TraceOps.init({
+    endpoint: env.TRACEOPS_ENDPOINT,
+    serviceName: 'workwyse-backend',
+    apiKey: env.TRACEOPS_API_KEY || undefined,
+  });
+  logger.info('🔍 TraceOps observability enabled');
+}
+
 import express from 'express';
-import { corsMiddleware } from './middleware/cors';
-import { connectDB, disconnectDB } from './config/database';
-import jobsRouter from './routes/jobs';
-import authRoutes from './routes/auth';
+import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
+import hpp from 'hpp';
 import morgan from 'morgan';
-import { Request, Response, NextFunction } from 'express';
-import { attachUser } from './middleware/auth'; // Import attachUser middleware
-
-const app = express();
-const PORT = process.env.PORT || 5000;
-
-// Middleware
-app.use(express.json());
-app.use(corsMiddleware);
-app.use(morgan('dev'));
-app.use(attachUser); // Attach user to every request
+import { corsMiddleware } from './middleware/cors';
+import { globalLimiter } from './middleware/rateLimiter';
+import { errorHandler } from './middleware/errorHandler';
+import { connectDB, disconnectDB } from './config/database';
 
 // Routes
-app.use('/api/jobs', jobsRouter);
+import authRoutes from './routes/auth';
+import jobsRouter from './routes/jobs';
+import companiesRouter from './routes/companies';
+import reportsRouter from './routes/reports';
+import uploadRouter from './routes/upload';
+import analyticsRouter from './routes/analytics';
+import activityRouter from './routes/activity';
+import notificationsRouter from './routes/notifications';
+import commentsRouter from './routes/comments';
+import exportRouter from './routes/export';
+import adminRouter from './routes/admin';
+
+const app = express();
+
+// ─── Security Middleware ────────────────────────────────────────────
+app.use(helmet());
+app.use(hpp());
+app.use(corsMiddleware);
+app.use(globalLimiter);
+
+// ─── Body Parsing ───────────────────────────────────────────────────
+app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+app.use(cookieParser());
+
+// ─── Logging ────────────────────────────────────────────────────────
+app.use(
+  morgan('dev', {
+    stream: { write: (message: string) => logger.http(message.trim()) },
+  })
+);
+
+// ─── Routes ─────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
+app.use('/api/jobs', jobsRouter);
+app.use('/api/jobs/:id/comments', commentsRouter);
+app.use('/api/companies', companiesRouter);
+app.use('/api/reports', reportsRouter);
+app.use('/api/upload', uploadRouter);
+app.use('/api/analytics', analyticsRouter);
+app.use('/api/activity', activityRouter);
+app.use('/api/notifications', notificationsRouter);
+app.use('/api/export', exportRouter);
+app.use('/api/admin', adminRouter);
 
 // Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Job Review API is running' });
+app.get('/health', (_req, res) => {
+  res.json({ success: true, status: 'OK', message: 'WorkWyse API is running' });
 });
 
-// Place this after all routes
-app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  console.error(err.stack);
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal Server Error',
-  });
+// ─── 404 handler ────────────────────────────────────────────────────
+app.use((_req, res) => {
+  res.status(404).json({ success: false, message: 'Route not found' });
 });
 
-// Connect to MongoDB and start server
+// ─── Centralized Error Handler (must be LAST) ───────────────────────
+app.use(errorHandler);
+
+// ─── TraceOps Express Middleware (after errorHandler) ───────────────
+if (env.TRACEOPS_ENDPOINT) {
+  TraceOps.express(app);
+}
+
+// ─── Start Server ───────────────────────────────────────────────────
 const startServer = async () => {
   try {
     await connectDB();
-    
-    const server = app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📊 Health check: http://localhost:${PORT}/health`);
-      console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
+
+    const server = app.listen(env.PORT, () => {
+      logger.info(` Server running on port ${env.PORT} [${env.NODE_ENV}]`);
+      logger.info(`Health check: http://localhost:${env.PORT}/health`);
+      logger.info(` API Base: http://localhost:${env.PORT}/api`);
     });
 
     // Graceful shutdown
-    process.on('SIGTERM', async () => {
-      console.log('SIGTERM received, shutting down gracefully');
+    const shutdown = async (signal: string) => {
+      logger.info(`${signal} received — shutting down gracefully`);
       server.close(async () => {
         await disconnectDB();
         process.exit(0);
       });
-    });
+    };
 
-    process.on('SIGINT', async () => {
-      console.log('SIGINT received, shutting down gracefully');
-      server.close(async () => {
-        await disconnectDB();
-        process.exit(0);
-      });
-    });
-
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
   } catch (error) {
-    console.error('Failed to start server:', error);
+    logger.error('Failed to start server', { error });
     process.exit(1);
   }
 };
 
 startServer();
 
-export default app; 
+export default app;

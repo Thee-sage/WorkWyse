@@ -5,11 +5,10 @@ import { useRouter } from 'next/navigation';
 export default function RegisterPage() {
   const router = useRouter();
 
-  async function handleRegister(username: string, password: string) {
-    // Registration is handled by AuthForm with OTP verification
-    // This is called after successful OTP verification
-    router.push('/login');
+  // After OTP verification, AuthForm auto-logs in the user and calls this
+  async function handleRegister(_identifier: string, _password: string) {
+    router.push('/');
   }
 
   return <AuthForm mode="register" onAuth={handleRegister} />;
-} 
+}

@@ -1,30 +1,29 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../components/AuthContext';
-import { updateUserType } from '../../components/AuthAPI';
+import { useToast } from '../../components/ui/Toast';
+import { ProtectedRoute } from '../../components/ProtectedRoute';
+import { api, ApiError } from '../../lib/api';
 import { useRouter } from 'next/navigation';
 
-export default function SettingsPage() {
-  const { user, userType, setUserType, logout } = useAuth();
-  const [selectedType, setSelectedType] = useState<'public' | 'private'>(userType);
+function SettingsContent() {
+  const { user, logout, setUser } = useAuth();
+  const toast = useToast();
+  const [selectedType, setSelectedType] = useState<'public' | 'private'>(user?.type || 'public');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const router = useRouter();
 
   useEffect(() => {
-    if (!user) {
-      router.push('/login');
-      return;
-    }
-    setSelectedType(userType);
-  }, [user, userType, router]);
+    if (user) setSelectedType(user.type);
+  }, [user]);
 
   const handleUpdateType = async () => {
-    if (!user?.uid) return;
+    if (!user) return;
     
-    if (selectedType === userType) {
-      setError('You are already a ' + userType + ' user.');
+    if (selectedType === user.type) {
+      setError('You are already a ' + user.type + ' user.');
       return;
     }
 
@@ -33,25 +32,33 @@ export default function SettingsPage() {
     setSuccess('');
 
     try {
-      const result = await updateUserType(user.uid, selectedType);
-      setUserType(selectedType);
-      setSuccess('User type updated successfully! Please refresh the page to see changes.');
-      // Update localStorage
-      localStorage.setItem('userType', selectedType);
-    } catch (err: any) {
-      setError(err.message || 'Failed to update user type');
+      await api.auth.updateUserType(selectedType);
+      // Update user in context and localStorage
+      const updatedUser = { ...user, type: selectedType };
+      setUser(updatedUser);
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      setSuccess('User type updated successfully!');
+      toast.success('Account type updated!');
+    } catch (err: unknown) {
+      const msg = err instanceof ApiError ? err.message : 'Failed to update user type';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
   };
 
-  if (!user) {
-    return null;
-  }
+  const handleLogout = async () => {
+    await logout();
+    toast.success('Logged out successfully');
+    router.push('/login');
+  };
+
+  if (!user) return null;
 
   return (
     <main className="min-h-screen bg-gray-50">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 pb-12 md:pt-36">
         <div className="bg-white rounded-lg shadow-sm border p-6">
           <h1 className="text-3xl font-bold text-gray-900 mb-6">Settings</h1>
 
@@ -64,15 +71,27 @@ export default function SettingsPage() {
                 <span className="font-medium">{user.username}</span>
               </div>
               <div>
+                <span className="text-gray-600">Email: </span>
+                <span className="font-medium">{user.email}</span>
+              </div>
+              <div>
                 <span className="text-gray-600">User ID: </span>
                 <span className="font-mono text-sm">{user.uid}</span>
               </div>
               <div>
+                <span className="text-gray-600">Role: </span>
+                <span className={`font-medium px-2 py-1 rounded ${
+                  user.role === 'admin' ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-800'
+                }`}>
+                  {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                </span>
+              </div>
+              <div>
                 <span className="text-gray-600">Current Type: </span>
                 <span className={`font-medium px-2 py-1 rounded ${
-                  userType === 'public' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+                  user.type === 'public' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
                 }`}>
-                  {userType.charAt(0).toUpperCase() + userType.slice(1)}
+                  {user.type.charAt(0).toUpperCase() + user.type.slice(1)}
                 </span>
               </div>
             </div>
@@ -147,9 +166,9 @@ export default function SettingsPage() {
 
             <button
               onClick={handleUpdateType}
-              disabled={loading || selectedType === userType}
+              disabled={loading || selectedType === user.type}
               className={`px-6 py-3 rounded-lg font-medium transition-colors ${
-                loading || selectedType === userType
+                loading || selectedType === user.type
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : 'bg-blue-600 hover:bg-blue-700 text-white'
               }`}
@@ -161,7 +180,7 @@ export default function SettingsPage() {
           {/* Logout */}
           <div className="pt-6 border-t">
             <button
-              onClick={logout}
+              onClick={handleLogout}
               className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
             >
               Logout
@@ -173,3 +192,10 @@ export default function SettingsPage() {
   );
 }
 
+export default function SettingsPage() {
+  return (
+    <ProtectedRoute>
+      <SettingsContent />
+    </ProtectedRoute>
+  );
+}

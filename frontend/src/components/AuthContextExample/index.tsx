@@ -13,11 +13,10 @@ export default function AuthContextExample() {
       <div className={styles.uid}>UID: {user.uid}</div>
       <button
         className={styles.logoutButton}
-        onClick={logout}
+        onClick={() => logout()}
       >
         Logout
       </button>
     </div>
   );
 }
-

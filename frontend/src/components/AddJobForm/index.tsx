@@ -2,12 +2,20 @@
 
 import { useState } from 'react';
 import { Job } from '../../types/job';
+import { ExtractionResult } from '../../types/extraction';
+import { api } from '../../lib/api';
 import styles from './style.module.css';
 import { useAuth } from '../AuthContext';
 
 interface AddJobFormProps {
   onJobAdded: (job: Job) => void;
 }
+
+type ExtractionStatus =
+  | { type: 'idle' }
+  | { type: 'loading' }
+  | { type: 'success'; result: ExtractionResult }
+  | { type: 'error'; message: string };
 
 export default function AddJobForm({ onJobAdded }: AddJobFormProps) {
   const { user } = useAuth();
@@ -20,6 +28,18 @@ export default function AddJobForm({ onJobAdded }: AddJobFormProps) {
     isFake: false
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [extraction, setExtraction] = useState<ExtractionStatus>({ type: 'idle' });
+
+  // Track verification data from extraction
+  const [verification, setVerification] = useState<{
+    status: 'verified' | 'unverified' | 'none';
+    confidence: 'low' | 'medium' | 'high' | null;
+    source: 'linkedin' | 'indeed' | 'external' | null;
+  }>({
+    status: 'none',
+    confidence: null,
+    source: null,
+  });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
@@ -27,6 +47,63 @@ export default function AddJobForm({ onJobAdded }: AddJobFormProps) {
       ...prev,
       [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
     }));
+  };
+
+  const handleAutoFill = async () => {
+    if (!formData.jobUrl) {
+      setExtraction({ type: 'error', message: 'Please enter a job URL first' });
+      return;
+    }
+
+    // Basic URL validation
+    try {
+      new URL(formData.jobUrl);
+    } catch {
+      setExtraction({ type: 'error', message: 'Please enter a valid URL' });
+      return;
+    }
+
+    setExtraction({ type: 'loading' });
+
+    try {
+      const response = await api.jobs.extractUrl(formData.jobUrl);
+      const result = response.data;
+
+      if (result.detected) {
+        // Auto-fill form fields with extracted data
+        setFormData(prev => ({
+          ...prev,
+          title: result.data.title || prev.title,
+          company: result.data.company || prev.company,
+          description: result.data.description || prev.description,
+        }));
+
+        // Set verification metadata
+        const verificationStatus = result.validation.confidence === 'high'
+          ? 'verified' as const
+          : 'unverified' as const;
+
+        setVerification({
+          status: verificationStatus,
+          confidence: result.validation.confidence,
+          source: result.source,
+        });
+      } else {
+        setVerification({
+          status: 'unverified',
+          confidence: 'low',
+          source: result.source,
+        });
+      }
+
+      setExtraction({ type: 'success', result });
+    } catch (err: any) {
+      setExtraction({
+        type: 'error',
+        message: err.message || 'Failed to extract job data',
+      });
+      setVerification({ status: 'none', confidence: null, source: null });
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -38,35 +115,98 @@ export default function AddJobForm({ onJobAdded }: AddJobFormProps) {
     }
     setIsSubmitting(true);
     try {
-      const response = await fetch('http://localhost:5000/api/jobs', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ ...formData, uid: user.uid }),
+      // Use the api wrapper instead of raw fetch; verification fields are server-only
+      const response = await api.jobs.create({
+        title: formData.title,
+        company: formData.company,
+        location: formData.location,
+        jobUrl: formData.jobUrl,
+        description: formData.description,
+        isFake: formData.isFake,
       });
-      if (response.ok) {
-        const newJob = await response.json();
-        onJobAdded(newJob);
-        setFormData({
-          title: '',
-          company: '',
-          location: '',
-          jobUrl: '',
-          description: '',
-          isFake: false
-        });
-      } else {
-        const error = await response.json();
-        alert(`Failed to add job: ${error.error}`);
-      }
-    } catch (error) {
+      onJobAdded(response.data);
+      setFormData({
+        title: '',
+        company: '',
+        location: '',
+        jobUrl: '',
+        description: '',
+        isFake: false
+      });
+      setExtraction({ type: 'idle' });
+      setVerification({ status: 'none', confidence: null, source: null });
+    } catch (error: any) {
       console.error('Failed to add job:', error);
-      alert('Failed to add job. Please try again.');
+      alert(error.message || 'Failed to add job. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  const resetForm = () => {
+    setFormData({
+      title: '',
+      company: '',
+      location: '',
+      jobUrl: '',
+      description: '',
+      isFake: false
+    });
+    setExtraction({ type: 'idle' });
+    setVerification({ status: 'none', confidence: null, source: null });
+  };
+
+  // ─── Source Label Helpers ────────────────────────────────────────
+
+  const getSourceLabel = (source: string) => {
+    switch (source) {
+      case 'linkedin': return 'LinkedIn';
+      case 'indeed': return 'Indeed';
+      default: return 'external source';
+    }
+  };
+
+  const getConfidenceBadge = () => {
+    if (extraction.type !== 'success') return null;
+    const { result } = extraction;
+    const { confidence } = result.validation;
+
+    if (result.detected && confidence === 'high') {
+      return (
+        <div className={styles.badgeSuccess}>
+          <span className={styles.badgeIcon}>✓</span>
+          Auto-filled from {getSourceLabel(result.source)}
+        </div>
+      );
+    }
+
+    if (result.detected && confidence === 'medium') {
+      return (
+        <div className={styles.badgeMedium}>
+          <span className={styles.badgeIcon}>⚡</span>
+          Partially extracted from {getSourceLabel(result.source)} — please review
+        </div>
+      );
+    }
+
+    if (result.detected && confidence === 'low') {
+      return (
+        <div className={styles.badgeWarning}>
+          <span className={styles.badgeIcon}>⚠</span>
+          Low confidence extraction — please verify all fields
+        </div>
+      );
+    }
+
+    return (
+      <div className={styles.badgeWarning}>
+        <span className={styles.badgeIcon}>⚠</span>
+        Could not verify this URL — please fill in details manually
+      </div>
+    );
+  };
+
+  // ─── Render ─────────────────────────────────────────────────────
 
   if (!user?.uid) {
     return (
@@ -82,6 +222,51 @@ export default function AddJobForm({ onJobAdded }: AddJobFormProps) {
       <h2 className={styles.title}>Add New Job Listing</h2>
       <form onSubmit={handleSubmit} className={styles.form}>
         <div className={styles.formGrid}>
+          {/* Job URL + Auto Fill — TOP OF FORM */}
+          <div className={styles.fullWidth}>
+            <label htmlFor="jobUrl" className={styles.label}>
+              Job Posting URL *
+            </label>
+            <div className={styles.urlRow}>
+              <input
+                type="url"
+                id="jobUrl"
+                name="jobUrl"
+                value={formData.jobUrl}
+                onChange={handleChange}
+                className={styles.urlInput}
+                placeholder="https://linkedin.com/jobs/view/..."
+                required
+              />
+              <button
+                type="button"
+                onClick={handleAutoFill}
+                disabled={extraction.type === 'loading' || !formData.jobUrl}
+                className={styles.autoFillButton}
+              >
+                {extraction.type === 'loading' ? (
+                  <>
+                    <span className={styles.spinner} />
+                    Extracting…
+                  </>
+                ) : (
+                  <>
+                    <span className={styles.autoFillIcon}>⚙</span>
+                    Auto Fill
+                  </>
+                )}
+              </button>
+            </div>
+            {/* Extraction Status Badge */}
+            {extraction.type === 'success' && getConfidenceBadge()}
+            {extraction.type === 'error' && (
+              <div className={styles.badgeError}>
+                <span className={styles.badgeIcon}>✕</span>
+                {extraction.message}
+              </div>
+            )}
+          </div>
+
           {/* Job Title */}
           <div className={styles.fullWidth}>
             <label htmlFor="title" className={styles.label}>
@@ -127,22 +312,6 @@ export default function AddJobForm({ onJobAdded }: AddJobFormProps) {
               onChange={handleChange}
               className={styles.input}
               placeholder="e.g., San Francisco, CA or Remote"
-              required
-            />
-          </div>
-          {/* Job URL */}
-          <div className={styles.fullWidth}>
-            <label htmlFor="jobUrl" className={styles.label}>
-              Job Posting URL *
-            </label>
-            <input
-              type="url"
-              id="jobUrl"
-              name="jobUrl"
-              value={formData.jobUrl}
-              onChange={handleChange}
-              className={styles.input}
-              placeholder="https://example.com/job-posting"
               required
             />
           </div>
@@ -193,14 +362,7 @@ export default function AddJobForm({ onJobAdded }: AddJobFormProps) {
           </button>
           <button
             type="button"
-            onClick={() => setFormData({
-              title: '',
-              company: '',
-              location: '',
-              jobUrl: '',
-              description: '',
-              isFake: false
-            })}
+            onClick={resetForm}
             className={styles.clearButton}
           >
             Clear Form
@@ -209,4 +371,4 @@ export default function AddJobForm({ onJobAdded }: AddJobFormProps) {
       </form>
     </div>
   );
-} 
+}
