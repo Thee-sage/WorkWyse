@@ -1,11 +1,11 @@
 'use client';
-import { useEffect, useRef } from 'react';
+import { Suspense, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../../../components/AuthContext';
 import { useToast } from '../../../../components/ui/Toast';
 import { ApiError } from '../../../../lib/api';
 
-export default function LinkedInCallbackPage() {
+function LinkedInCallbackContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { verifyWithLinkedIn } = useAuth();
@@ -70,5 +70,13 @@ export default function LinkedInCallbackPage() {
         Verifying your LinkedIn identity…
       </p>
     </div>
+  );
+}
+
+export default function LinkedInCallbackPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LinkedInCallbackContent />
+    </Suspense>
   );
 }
