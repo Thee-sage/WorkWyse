@@ -19,7 +19,7 @@ import request from 'supertest';
 const BASE_ENV: Record<string, string> = {
   NODE_ENV: 'production',
   PORT: '8080',
-  MONGODB_URI: 'mongodb+srv://user:pass@cluster.mongodb.net/workwyse',
+  MONGODB_URI: 'mongodb+srv://user:placeholder@fake-cluster.example.invalid/workwyse',
   JWT_SECRET: 'production-access-secret-at-least-32-chars',
   JWT_REFRESH_SECRET: 'production-refresh-secret-at-least-32-chars',
   GMAIL_USER: 'noreply@workwyse.com',

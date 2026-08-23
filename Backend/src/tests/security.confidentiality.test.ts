@@ -207,14 +207,14 @@ describe('Error responses do not leak internals', () => {
   it('hides the message of an unexpected failure in production', async () => {
     const res = await request(
       appThrowing(
-        () => new Error('connection to mongodb+srv://admin:hunter2@cluster.mongodb.net failed'),
+        () => new Error('connection to mongodb+srv://admin:REDACTED@fake-cluster.example.invalid failed'),
         'production'
       )
     ).get('/boom');
 
     expect(res.status).toBe(500);
     expect(res.body.message).toBe('Internal server error');
-    expect(JSON.stringify(res.body)).not.toContain('hunter2');
+    expect(JSON.stringify(res.body)).not.toContain('REDACTED');
     expect(JSON.stringify(res.body)).not.toContain('mongodb+srv');
   });
 
