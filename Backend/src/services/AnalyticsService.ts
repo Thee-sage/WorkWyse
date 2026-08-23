@@ -29,7 +29,36 @@ interface TrendPoint {
   count: number;
 }
 
+export interface PublicStats {
+  listingsTracked: number;
+  recordsWithAccount: number;
+  evidencePublished: number;
+  employerResponses: number;
+  companiesTracked: number;
+}
+
 class AnalyticsService {
+  /**
+   * Public platform-wide stats for the Home page ("the platform so far").
+   * Deliberately narrower than the admin dashboard — no user counts.
+   */
+  static async getPublicStats(): Promise<PublicStats> {
+    const [listingsTracked, recordsWithAccount, evidenceAgg, employerResponses, companiesTracked] = await Promise.all([
+      Job.countDocuments(),
+      Job.countDocuments({ 'reviews.0': { $exists: true } }),
+      Job.aggregate([{ $project: { count: { $size: '$evidence' } } }, { $group: { _id: null, total: { $sum: '$count' } } }]),
+      Report.countDocuments({ employerReply: { $exists: true } }),
+      Job.distinct('company').then((names) => names.length),
+    ]);
+    return {
+      listingsTracked,
+      recordsWithAccount,
+      evidencePublished: evidenceAgg[0]?.total ?? 0,
+      employerResponses,
+      companiesTracked,
+    };
+  }
+
   /**
    * Returns aggregate stats for the admin dashboard.
    */

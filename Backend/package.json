@@ -8,7 +8,13 @@
     "build": "tsc",
     "watch": "node --dns-result-order=ipv4first -r ts-node/register src/app.ts",
     "seed": "node --dns-result-order=ipv4first -r ts-node/register src/scripts/seed.ts",
-    "test": "jest --forceExit --detectOpenHandles"
+    "test": "jest --forceExit --detectOpenHandles",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage --forceExit",
+    "typecheck": "tsc --noEmit",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "verify": "npm run typecheck && npm run test:coverage && npm run audit:prod",
+    "test:ci": "jest --coverage --ci --forceExit --runInBand"
   },
   "dependencies": {
     "@types/nodemailer": "^7.0.4",
@@ -29,7 +35,7 @@
     "mongoose": "^8.16.2",
     "morgan": "^1.10.1",
     "multer": "^2.1.1",
-    "nodemailer": "^7.0.10",
+    "nodemailer": "^9.0.5",
     "pdfkit": "^0.19.1",
     "traceops-sdk": "^0.2.1",
     "uuid": "^11.1.0",

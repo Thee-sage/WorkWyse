@@ -1,5 +1,5 @@
 "use client";
-import React, { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -25,6 +25,14 @@ let nextId = 0;
 // ─── Provider ───────────────────────────────────────────────────────
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  // Finding: avoid a hydration mismatch — `typeof window` is always true in
+  // the browser (including the first client render pass during hydration),
+  // while the server render always has no window. Gate the portal on a
+  // state flag flipped in an effect instead, so the client's first render
+  // matches the server's (neither renders the portal), and the portal only
+  // mounts after hydration completes.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const addToast = useCallback((message: string, type: ToastType) => {
     const id = nextId++;
@@ -47,7 +55,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      {typeof window !== "undefined" &&
+      {mounted &&
         createPortal(
           <div
             style={{

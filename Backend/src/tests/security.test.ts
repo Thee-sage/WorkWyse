@@ -21,31 +21,16 @@ import { errorHandler } from '../middleware/errorHandler';
 // ─── Env mock ────────────────────────────────────────────────────────
 // Must be first before any module that imports env
 
-const TEST_JWT_SECRET = 'a-test-secret-that-is-at-least-32-characters-long!!';
-const TEST_REFRESH_SECRET = 'a-refresh-secret-that-is-at-least-32-characters-long!!';
+// Signing secrets are read from the real config/env (seeded by
+// src/tests/setup/testEnv.ts) so a token signed here always verifies
+// against what the middleware uses.
+import env from '../config/env';
 
-jest.mock('../config/env', () => ({
-  __esModule: true,
-  default: {
-    NODE_ENV: 'test',
-    PORT: 5000,
-    MONGODB_URI: 'mongodb://localhost:27017/test',
-    JWT_SECRET: 'a-test-secret-that-is-at-least-32-characters-long!!',
-    JWT_REFRESH_SECRET: 'a-refresh-secret-that-is-at-least-32-characters-long!!',
-    JWT_ACCESS_EXPIRY: '15m',
-    JWT_REFRESH_EXPIRY: '7d',
-    GMAIL_USER: 'test@test.com',
-    GMAIL_APP_PASSWORD: 'test',
-    CORS_ORIGIN: 'http://localhost:3000',
-    LINKEDIN_CLIENT_ID: 'test',
-    LINKEDIN_CLIENT_SECRET: 'test',
-    LINKEDIN_REDIRECT_URI: 'http://localhost:3000/auth/linkedin/callback',
-    CLOUDINARY_CLOUD_NAME: '',
-    CLOUDINARY_API_KEY: '',
-    CLOUDINARY_API_SECRET: '',
-  },
-}));
+const TEST_JWT_SECRET = env.JWT_SECRET;
+const TEST_REFRESH_SECRET = env.JWT_REFRESH_SECRET;
 
+// Environment comes from src/tests/setup/testEnv.ts (jest setupFiles),
+// so these suites run against the real config/env.ts.
 jest.mock('../config/cloudinary', () => ({
   uploadToCloudinary: jest.fn(),
   resetCloudinaryConfig: jest.fn(),
@@ -65,11 +50,12 @@ jest.mock('../config/logger', () => ({
 // ─── Token helpers ────────────────────────────────────────────────────
 
 function makeAccessToken(uid: string, username: string, role: 'user' | 'admin' = 'user') {
-  return jwt.sign({ uid, username, role, type: 'access' }, TEST_JWT_SECRET, { expiresIn: '1h' });
+  // requireVerified gates every write route on this claim.
+  return jwt.sign({ uid, username, role, isEmailVerified: true, type: 'access' }, TEST_JWT_SECRET, { expiresIn: '1h' });
 }
 
 function makeRefreshToken(uid: string, username: string) {
-  return jwt.sign({ uid, username, role: 'user', type: 'refresh' }, TEST_REFRESH_SECRET, { expiresIn: '7d' });
+  return jwt.sign({ uid, username, role: 'user', isEmailVerified: true, type: 'refresh' }, TEST_REFRESH_SECRET, { expiresIn: '7d' });
 }
 
 // ─── Shared test state ────────────────────────────────────────────────

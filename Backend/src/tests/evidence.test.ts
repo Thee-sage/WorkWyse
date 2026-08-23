@@ -2,28 +2,8 @@ import request from 'supertest';
 import { createTestApp, generateTestToken } from './helpers/testApp';
 
 // Mock env
-jest.mock('../config/env', () => ({
-  __esModule: true,
-  default: {
-    NODE_ENV: 'test',
-    PORT: 5000,
-    MONGODB_URI: 'mongodb://localhost:27017/test',
-    JWT_SECRET: 'a-test-secret-that-is-at-least-32-characters-long',
-    JWT_REFRESH_SECRET: 'a-refresh-secret-that-is-at-least-32-characters-long!!',
-    JWT_ACCESS_EXPIRY: '15m',
-    JWT_REFRESH_EXPIRY: '7d',
-    GMAIL_USER: 'test@test.com',
-    GMAIL_APP_PASSWORD: 'test',
-    CORS_ORIGIN: 'http://localhost:3000',
-    LINKEDIN_CLIENT_ID: 'test',
-    LINKEDIN_CLIENT_SECRET: 'test',
-    LINKEDIN_REDIRECT_URI: 'http://localhost:3000/auth/linkedin/callback',
-    CLOUDINARY_CLOUD_NAME: 'test-cloud',
-    CLOUDINARY_API_KEY: 'test-key',
-    CLOUDINARY_API_SECRET: 'test-secret',
-  },
-}));
-
+// Environment comes from src/tests/setup/testEnv.ts (jest setupFiles),
+// so these suites run against the real config/env.ts.
 // Mock Cloudinary
 jest.mock('../config/cloudinary', () => ({
   uploadToCloudinary: jest.fn().mockResolvedValue('https://res.cloudinary.com/test/image/upload/v1/test.jpg'),

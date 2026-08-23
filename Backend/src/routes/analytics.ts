@@ -5,7 +5,10 @@ import { requirePermission } from '../middleware/rbac';
 
 const router = express.Router();
 
-// All analytics routes require admin or moderator access
+// Public: platform-wide stats for the Home page
+router.get('/public', AnalyticsController.getPublicStats);
+
+// All other analytics routes require admin or moderator access
 router.get(
   '/dashboard',
   authenticate,

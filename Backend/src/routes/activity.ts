@@ -13,6 +13,9 @@ const targetParamSchema = {
   }),
 };
 
+// Public: site-wide transparency feed
+router.get('/feed', ActivityController.getFeed);
+
 // Public: activity feed for a specific target
 router.get(
   '/:targetType/:targetId',

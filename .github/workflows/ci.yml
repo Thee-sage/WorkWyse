@@ -1,0 +1,140 @@
+name: CI
+
+# The deploy gate. Every job here must pass before the backend ships to
+# Azure or the frontend ships to Vercel. Security checks are separated from
+# the general test job so a failure names the reason directly.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Dependency advisories appear without anyone touching the code, so the
+  # audit also runs on a schedule.
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend — types, tests, coverage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: Backend/package-lock.json
+
+      # traceops-sdk declares a peer dependency on express 4 while the app
+      # runs express 5. The flag keeps install reproducible until that
+      # dependency is updated or dropped.
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      # Includes the security, confidentiality, SSRF, injection, deployment
+      # config and resilience suites, and enforces the coverage floors in
+      # jest.config.js for the security-critical modules.
+      - name: Test with coverage
+        run: npm run test:ci
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: Backend/coverage/
+          retention-days: 7
+
+  backend-security:
+    name: Backend — dependency audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: Backend/package-lock.json
+
+      - run: npm ci --legacy-peer-deps
+
+      # Fails the build on a high or critical advisory in anything that
+      # actually ships. Dev-only advisories are reported but do not block.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit all dependencies (advisory only)
+        run: npm audit || true
+
+  secret-scan:
+    name: Secret scan — full history
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The in-repo test scans the working tree; this scans everything
+          # ever committed, which is the part that cannot be fixed later.
+          fetch-depth: 0
+
+      - name: Scan git history for credentials
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  frontend:
+    name: Frontend — build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+        env:
+          # A build-time placeholder. The real value comes from the Vercel
+          # project settings; this only has to be present and https so the
+          # production build does not bake in a localhost URL.
+          NEXT_PUBLIC_API_URL: https://example.invalid/api
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high

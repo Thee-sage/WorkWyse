@@ -4,7 +4,14 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface INotification extends Document {
   userId: mongoose.Types.ObjectId;
-  type: 'job_created' | 'report_reviewed' | 'evidence_uploaded' | 'vote_received' | 'comment_added' | 'role_changed';
+  type:
+    | 'job_created'
+    | 'report_reviewed'
+    | 'evidence_uploaded'
+    | 'vote_received'
+    | 'comment_added'
+    | 'role_changed'
+    | 'employer_replied';
   message: string;
   link?: string;
   read: boolean;
@@ -18,7 +25,15 @@ const NotificationSchema = new Schema<INotification>(
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     type: {
       type: String,
-      enum: ['job_created', 'report_reviewed', 'evidence_uploaded', 'vote_received', 'comment_added', 'role_changed'],
+      enum: [
+        'job_created',
+        'report_reviewed',
+        'evidence_uploaded',
+        'vote_received',
+        'comment_added',
+        'role_changed',
+        'employer_replied',
+      ],
       required: true,
     },
     message: { type: String, required: true, trim: true },

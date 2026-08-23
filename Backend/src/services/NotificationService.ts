@@ -30,6 +30,36 @@ class NotificationService {
   }
 
   /**
+   * Notify every user watching a job that something changed on it.
+   *
+   * Used for the "something changes on a record you watch" promise made on
+   * the notifications page — evidence verification/redaction is the first
+   * event wired to it. Bulk-inserts rather than looping N calls to create().
+   */
+  static async notifyWatchers(
+    jobId: string,
+    type: NotificationType,
+    message: string,
+    link?: string,
+    excludeUid?: string
+  ): Promise<void> {
+    try {
+      const watchers = await User.find({ watchedJobs: jobId })
+        .select('_id uid')
+        .lean();
+      const recipients = watchers.filter((w) => w.uid !== excludeUid);
+      if (recipients.length === 0) return;
+
+      await Notification.insertMany(
+        recipients.map((w) => ({ userId: w._id, type, message, link })),
+        { ordered: false }
+      );
+    } catch (err) {
+      logger.error('NotificationService.notifyWatchers failed', { err, jobId });
+    }
+  }
+
+  /**
    * Get paginated notifications for a user.
    */
   static async getForUser(uid: string, { page, limit }: PaginationParams) {

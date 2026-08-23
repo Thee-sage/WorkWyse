@@ -1,282 +1,219 @@
-'use client';
-import { useState } from 'react';
-import Link from 'next/link';
-import styles from './style.module.css';
-import { api, setAccessToken } from '../../lib/api';
-import { useAuth } from '../AuthContext';
-import { useToast } from '../ui/Toast';
-import { ApiError } from '../../lib/api';
+"use client";
+import { useState } from "react";
+import Link from "next/link";
+import { api, setAccessToken, ApiError } from "../../lib/api";
+import { useAuth } from "../AuthContext";
+import { useToast } from "../ui/Toast";
+import { Mono, PrimaryButton } from "../ui/primitives";
 
 interface AuthFormProps {
-  mode: 'login' | 'register';
+  mode: "login" | "register";
   onAuth: (identifier: string, password: string) => Promise<void>;
 }
 
 export default function AuthForm({ mode, onAuth }: AuthFormProps) {
-  // Login uses `identifier` (email or username), register still collects both
-  const [identifier, setIdentifier] = useState('');
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [userType, setUserType] = useState<'public' | 'private'>('public');
-  const [otp, setOtp] = useState('');
-  const [error, setError] = useState('');
+  const [identifier, setIdentifier] = useState("");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [userType, setUserType] = useState<"public" | "private">("public");
+  const [otp, setOtp] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const { setUser } = useAuth();
   const toast = useToast();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError('');
-    
-    if (mode === 'login') {
+    setError("");
+
+    if (mode === "login") {
       setLoading(true);
       try {
         await onAuth(identifier, password);
-        toast.success('Logged in successfully!');
-      } catch (err: unknown) {
-        const msg = err instanceof ApiError ? err.message : 'Login failed';
+        toast.success("Logged in");
+      } catch (err) {
+        const msg = err instanceof ApiError ? err.message : "Login failed";
+        setError(msg);
+        toast.error(msg);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (!otpSent) {
+      setLoading(true);
+      try {
+        await api.auth.register({ username, email, password, userType });
+        setOtpSent(true);
+        toast.success("Code sent — check your email");
+      } catch (err) {
+        const msg = err instanceof ApiError ? err.message : "Failed to send code";
         setError(msg);
         toast.error(msg);
       } finally {
         setLoading(false);
       }
     } else {
-      // Registration flow
-      if (!otpSent) {
-        // Step 1: Send OTP
-        setLoading(true);
-        try {
-          await api.auth.register({ username, email, password, userType });
-          setOtpSent(true);
-          toast.success('OTP sent! Check your email.');
-        } catch (err: unknown) {
-          const msg = err instanceof ApiError ? err.message : 'Failed to send OTP';
-          setError(msg);
-          toast.error(msg);
-        } finally {
-          setLoading(false);
-        }
-      } else {
-        // Step 2: Verify OTP -- this now auto-logs in the user
-        setVerifying(true);
-        try {
-          const res = await api.auth.verifyOTP(email, otp);
-          const { user, accessToken } = res.data;
-
-          // Store access token in memory; refresh token is set
-          // automatically as an httpOnly cookie by the server (Finding 7.3)
-          setAccessToken(accessToken);
-          localStorage.setItem('user', JSON.stringify(user));
-          setUser(user);
-
-          toast.success('Registration successful!');
-          await onAuth(username, password); // triggers redirect
-        } catch (err: unknown) {
-          const msg = err instanceof ApiError ? err.message : 'OTP verification failed';
-          setError(msg);
-          toast.error(msg);
-        } finally {
-          setVerifying(false);
-        }
+      setVerifying(true);
+      try {
+        const res = await api.auth.verifyOTP(email, otp);
+        const { user, accessToken } = res.data;
+        setAccessToken(accessToken);
+        localStorage.setItem("user", JSON.stringify(user));
+        setUser(user);
+        toast.success("Account created");
+        await onAuth(username, password);
+      } catch (err) {
+        const msg = err instanceof ApiError ? err.message : "Verification failed";
+        setError(msg);
+        toast.error(msg);
+      } finally {
+        setVerifying(false);
       }
     }
-  };
+  }
 
   return (
-    <div className={styles.page}>
-      <div className={styles.wrapper}>
-        {/* Left -- Brand Panel */}
-        <div className={styles.brandPanel}>
-          <p className={styles.brandLogo}>WorkWyse</p>
-          <h1 className={styles.brandTagline}>
-            {mode === 'login'
-              ? 'Welcome back, investigator.'
-              : 'Join the investigation.'}
+    <div className="grid grid-cols-1 lg:grid-cols-2 min-h-[calc(100vh-95px)]">
+      <div className="hidden lg:flex flex-col justify-between bg-ink text-background px-12 py-14">
+        <div>
+          <Mono className="!text-faint">WORKWYSE</Mono>
+          <h1 className="mt-6 text-[40px] leading-[1.1] tracking-[-0.035em] font-bold max-w-[14ch]">
+            {mode === "login" ? "Welcome back to the record." : "Add your name to the record."}
           </h1>
-          <p className={styles.brandDescription}>
-            {mode === 'login'
-              ? 'Sign in to continue tracking ghost jobs and helping the community separate real opportunities from noise.'
-              : 'Create an account to report suspicious listings, upvote verified jobs, and help build a more transparent job market.'}
+          <p className="mt-5 font-serif text-[18px] leading-[1.6] text-border-mid max-w-[36ch]">
+            {mode === "login"
+              ? "Sign in to file accounts, evidence, and challenges, and to watch the records that matter to you."
+              : "Every account, evidence item, and vote is attributed to a handle with a visible contribution history."}
           </p>
-          <div className={styles.brandDecor}>W</div>
         </div>
-
-        {/* Right -- Form Panel */}
-        <div className={styles.formPanel}>
-          <div className={styles.header}>
-            <h2 className={styles.title}>
-              {mode === 'login' ? 'Sign In' : 'Create Account'}
-            </h2>
-            <p className={styles.subtitle}>
-              {mode === 'login' ? (
-                <>Don&apos;t have an account?{' '}<Link href="/register" className={styles.subtitleLink}>Create one</Link></>
-              ) : (
-                <>Already have an account?{' '}<Link href="/login" className={styles.subtitleLink}>Sign in</Link></>
-              )}
-            </p>
-          </div>
-
-          <form className={styles.formContent} onSubmit={handleSubmit}>
-            {/* Login: single identifier field (email or username) */}
-            {mode === 'login' && (
-              <div className={styles.inputSection}>
-                <label htmlFor="identifier" className={styles.label}>Email or Username</label>
-                <input
-                  id="identifier"
-                  type="text"
-                  className={styles.input}
-                  value={identifier}
-                  onChange={e => setIdentifier(e.target.value)}
-                  required
-                  autoComplete="username"
-                  placeholder="you@example.com or your username"
-                />
-              </div>
-            )}
-
-            {/* Register: separate username field */}
-            {mode === 'register' && (
-              <div className={styles.inputSection}>
-                <label htmlFor="username" className={styles.label}>Username</label>
-                <input
-                  id="username"
-                  type="text"
-                  className={styles.input}
-                  value={username}
-                  onChange={e => setUsername(e.target.value)}
-                  required
-                  disabled={otpSent}
-                  autoComplete="username"
-                  placeholder="Your username"
-                />
-              </div>
-            )}
-            
-            {mode === 'register' && (
-              <>
-                <div className={styles.inputSection}>
-                  <label htmlFor="email" className={styles.label}>Email</label>
-                  <input
-                    id="email"
-                    type="email"
-                    className={styles.input}
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    required
-                    disabled={otpSent}
-                    autoComplete="email"
-                    placeholder="you@example.com"
-                  />
-                  <p className={styles.emailHint}>
-                    Using the same email as your LinkedIn makes future identity verification seamless.
-                  </p>
-                </div>
-                {!otpSent && (
-                  <div className={styles.inputSection}>
-                    <label className={styles.label}>Account Type</label>
-                    <div className={styles.userTypeContainer}>
-                      <button
-                        type="button"
-                        onClick={() => setUserType('public')}
-                        className={`${styles.userTypeButton} ${styles.userTypeButtonPublic} ${userType === 'public' ? styles.active : ''}`}
-                      >
-                        Public
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setUserType('private')}
-                        className={`${styles.userTypeButton} ${styles.userTypeButtonPrivate} ${userType === 'private' ? styles.active : ''}`}
-                      >
-                        Private
-                      </button>
-                    </div>
-                    <p className={styles.userTypeDescription}>
-                      {userType === 'public' 
-                        ? 'Public users can vote on jobs and add job listings.' 
-                        : 'Private users can only add reviews, no voting or job posting.'}
-                    </p>
-                  </div>
-                )}
-              </>
-            )}
-            
-            <div className={styles.inputSection}>
-              <label htmlFor="password" className={styles.label}>Password</label>
-              <input
-                id="password"
-                type="password"
-                className={styles.input}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-                disabled={otpSent && mode === 'register'}
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                placeholder={mode === 'login' ? 'Your password' : 'Min. 8 chars, uppercase, lowercase, number'}
-              />
-
-              {/* Forgot Password link -- only on login */}
-              {mode === 'login' && (
-                <div style={{ textAlign: 'right', marginTop: '0.375rem' }}>
-                  <Link
-                    href="/forgot-password"
-                    style={{
-                      fontSize: '0.8rem',
-                      color: 'var(--accent)',
-                      textDecoration: 'none',
-                      fontWeight: 500,
-                      transition: 'opacity 0.2s',
-                    }}
-                  >
-                    Forgot password?
-                  </Link>
-                </div>
-              )}
-            </div>
-
-            {mode === 'register' && otpSent && (
-              <div className={styles.inputSection}>
-                <label htmlFor="otp" className={styles.label}>Verification Code</label>
-                <input
-                  id="otp"
-                  type="text"
-                  className={`${styles.input} ${styles.otpInput}`}
-                  value={otp}
-                  onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  required
-                  maxLength={6}
-                  placeholder="000000"
-                />
-                <p className={styles.otpHint}>
-                  We sent a 6-digit code to your email
-                </p>
-              </div>
-            )}
-
-            {error && <div className={styles.error}>{error}</div>}
-            <div className={styles.buttonContainer}>
-              <button 
-                type="submit" 
-                className={styles.submitButton} 
-                disabled={loading || verifying}
-              >
-                {loading 
-                  ? (mode === 'login' ? 'Signing in...' : 'Sending code...')
-                  : verifying
-                  ? 'Verifying...'
-                  : mode === 'login'
-                  ? 'Sign In'
-                  : otpSent
-                  ? 'Verify & Create Account'
-                  : 'Send Verification Code'
-                }
-              </button>
-            </div>
-          </form>
+        <div className="font-mono text-[10px] tracking-[0.1em] text-faint">
+          EVERY RECORD SHOWS ITS SOURCES · EVERY CONTRIBUTION IS ATTRIBUTED
         </div>
       </div>
+
+      <div className="px-6 sm:px-12 py-14 flex flex-col justify-center max-w-[440px] mx-auto w-full">
+        <h2 className="text-[26px] font-bold tracking-[-0.03em]">{mode === "login" ? "Sign in" : "Create an account"}</h2>
+        <p className="mt-2 text-[13.5px] text-muted">
+          {mode === "login" ? (
+            <>Don&apos;t have an account? <Link href="/register" className="text-accent">Create one</Link></>
+          ) : (
+            <>Already have an account? <Link href="/login" className="text-accent">Sign in</Link></>
+          )}
+        </p>
+
+        <form onSubmit={handleSubmit} className="mt-7 flex flex-col gap-4">
+          {mode === "login" && (
+            <Field label="Email or username">
+              <input value={identifier} onChange={(e) => setIdentifier(e.target.value)} required autoComplete="username" placeholder="you@example.com or your username" className="input" />
+            </Field>
+          )}
+
+          {mode === "register" && (
+            <Field label="Username">
+              <input value={username} onChange={(e) => setUsername(e.target.value)} required disabled={otpSent} autoComplete="username" placeholder="Your username" className="input" />
+            </Field>
+          )}
+
+          {mode === "register" && (
+            <>
+              <Field label="Email">
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={otpSent} autoComplete="email" placeholder="you@example.com" className="input" />
+              </Field>
+              {!otpSent && (
+                <div>
+                  <Mono>ACCOUNT TYPE</Mono>
+                  <div className="mt-2 flex gap-2">
+                    {(["public", "private"] as const).map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setUserType(t)}
+                        className={`flex-1 py-2.5 text-[13px] font-semibold border capitalize ${userType === t ? "border-ink bg-panel" : "border-border-mid text-muted"}`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1.5 text-[12px] text-muted">
+                    {userType === "public" ? "Your handle is shown next to what you file." : "Your handle is redacted to Anonymous wherever shown."}
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+
+          <Field label="Password">
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              disabled={otpSent && mode === "register"}
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              placeholder={mode === "login" ? "Your password" : "Min. 8 chars, uppercase, lowercase, number"}
+              className="input"
+            />
+            {mode === "login" && (
+              <Link href="/forgot-password" className="mt-1.5 inline-block text-[12.5px] text-accent">Forgot password?</Link>
+            )}
+          </Field>
+
+          {mode === "register" && otpSent && (
+            <Field label="Verification code">
+              <input
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                required
+                maxLength={6}
+                placeholder="000000"
+                className="input font-mono tracking-[0.2em]"
+              />
+              <p className="mt-1.5 text-[12px] text-muted">We sent a 6-digit code to your email.</p>
+            </Field>
+          )}
+
+          {error && <div className="text-[13px] text-destructive">{error}</div>}
+
+          <PrimaryButton type="submit" disabled={loading || verifying} className="mt-2">
+            {loading
+              ? mode === "login" ? "Signing in…" : "Sending code…"
+              : verifying
+              ? "Verifying…"
+              : mode === "login"
+              ? "Sign in"
+              : otpSent
+              ? "Verify & create account"
+              : "Send verification code"}
+          </PrimaryButton>
+        </form>
+      </div>
+
+      <style jsx>{`
+        .input {
+          width: 100%;
+          border: 1px solid var(--border-strong);
+          background: var(--card);
+          padding: 11px 13px;
+          font-size: 14.5px;
+          outline: none;
+        }
+        .input:focus { border-color: var(--accent); }
+        .input:disabled { opacity: 0.55; }
+      `}</style>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block font-mono text-[10px] tracking-[0.1em] text-muted mb-1.5">{label.toUpperCase()}</label>
+      {children}
     </div>
   );
 }

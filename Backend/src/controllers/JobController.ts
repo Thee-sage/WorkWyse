@@ -73,7 +73,7 @@ const JobController = {
 
   addReview: catchAsync(async (req: Request, res: Response) => {
     if (!req.user) throw ApiError.unauthorized();
-    const review = await JobService.addReview(req.params.id, req.body, req.user.username);
+    const review = await JobService.addReview(req.params.id, req.body, req.user.username, req.user.uid);
     ApiResponse.created(res, review, 'Review added successfully');
   }),
 
@@ -124,6 +124,103 @@ const JobController = {
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 20;
     const result = await JobService.getRealJobs({ page, limit });
+    ApiResponse.paginated(res, result.data, {
+      page: result.page,
+      limit,
+      total: result.total,
+      totalPages: result.totalPages,
+    });
+  }),
+
+  getRegistryListing: catchAsync(async (req: Request, res: Response) => {
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+    const signal = req.query.signal as any;
+    const search = req.query.search as string | undefined;
+    const result = await JobService.getRegistryListing({ page, limit, signal, search });
+    ApiResponse.paginated(res, result.data, {
+      page: result.page,
+      limit,
+      total: result.total,
+      totalPages: result.totalPages,
+    });
+  }),
+
+  getPendingEvidenceQueue: catchAsync(async (req: Request, res: Response) => {
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+    const result = await JobService.getPendingEvidenceQueue({ page, limit });
+    ApiResponse.paginated(res, result.data, {
+      page: result.page,
+      limit,
+      total: result.total,
+      totalPages: result.totalPages,
+    });
+  }),
+
+  getRecord: catchAsync(async (req: Request, res: Response) => {
+    const record = await JobService.getRecord(req.params.id);
+    ApiResponse.success(res, record);
+  }),
+
+  addEvidence: catchAsync(async (req: Request, res: Response) => {
+    if (!req.user) throw ApiError.unauthorized();
+    const evidence = await JobService.addEvidence(req.params.id, req.body, req.user.uid);
+    ApiResponse.created(res, evidence, 'Evidence added successfully');
+  }),
+
+  updateEvidenceStatus: catchAsync(async (req: Request, res: Response) => {
+    if (!req.user) throw ApiError.unauthorized();
+    const evidence = await JobService.updateEvidenceStatus(
+      req.params.id,
+      req.params.evidenceId,
+      req.body,
+      req.user.uid
+    );
+    ApiResponse.success(res, evidence, 'Evidence decision recorded');
+  }),
+
+  checkUrl: catchAsync(async (req: Request, res: Response) => {
+    const urlCheck = await JobService.checkUrl(req.params.id);
+    ApiResponse.success(res, urlCheck, 'URL check complete');
+  }),
+
+  getWatchStatus: catchAsync(async (req: Request, res: Response) => {
+    if (!req.user) throw ApiError.unauthorized();
+    const watching = await JobService.isWatching(req.params.id, req.user.uid);
+    ApiResponse.success(res, { watching });
+  }),
+
+  watchJob: catchAsync(async (req: Request, res: Response) => {
+    if (!req.user) throw ApiError.unauthorized();
+    await JobService.watchJob(req.params.id, req.user.uid);
+    ApiResponse.success(res, { watching: true });
+  }),
+
+  unwatchJob: catchAsync(async (req: Request, res: Response) => {
+    if (!req.user) throw ApiError.unauthorized();
+    await JobService.unwatchJob(req.params.id, req.user.uid);
+    ApiResponse.success(res, { watching: false });
+  }),
+
+  getMyContributions: catchAsync(async (req: Request, res: Response) => {
+    if (!req.user) throw ApiError.unauthorized();
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+    const result = await JobService.getMyContributions(req.user.username, { page, limit });
+    ApiResponse.paginated(res, result.data, {
+      page: result.page,
+      limit,
+      total: result.total,
+      totalPages: result.totalPages,
+    });
+  }),
+
+  getWatching: catchAsync(async (req: Request, res: Response) => {
+    if (!req.user) throw ApiError.unauthorized();
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+    const result = await JobService.getWatching(req.user.uid, { page, limit });
     ApiResponse.paginated(res, result.data, {
       page: result.page,
       limit,

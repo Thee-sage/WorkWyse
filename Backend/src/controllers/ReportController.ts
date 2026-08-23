@@ -42,6 +42,8 @@ const ReportController = {
     });
   }),
 
+  // Admin-only direct override — see routes/reports.ts. A moderator's path
+  // to a decision is requestDecision below, subject to admin approval.
   updateStatus: catchAsync(async (req: Request, res: Response) => {
     if (!req.user) throw ApiError.unauthorized();
     const report = await ReportService.updateStatus(
@@ -50,6 +52,58 @@ const ReportController = {
       req.user.uid
     );
     ApiResponse.success(res, report, 'Report status updated');
+  }),
+
+  setEmployerReply: catchAsync(async (req: Request, res: Response) => {
+    if (!req.user) throw ApiError.unauthorized();
+    const report = await ReportService.setEmployerReply(req.params.id, req.body.text, req.user.uid);
+    ApiResponse.success(res, report, 'Employer reply recorded');
+  }),
+
+  // ─── Moderator decision requests ────────────────────────────────────
+
+  requestDecision: catchAsync(async (req: Request, res: Response) => {
+    if (!req.user) throw ApiError.unauthorized();
+    const request = await ReportService.requestDecision(
+      req.params.id,
+      req.body.proposedStatus,
+      req.body.note,
+      req.user.uid
+    );
+    ApiResponse.created(res, request, 'Decision request submitted — awaiting admin approval');
+  }),
+
+  getDecisionRequests: catchAsync(async (req: Request, res: Response) => {
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+    const status = req.query.status as 'pending' | 'approved' | 'rejected' | undefined;
+    const result = await ReportService.getDecisionRequests(status, { page, limit });
+    ApiResponse.paginated(res, result.data, {
+      page: result.page,
+      limit,
+      total: result.total,
+      totalPages: result.totalPages,
+    });
+  }),
+
+  approveDecisionRequest: catchAsync(async (req: Request, res: Response) => {
+    if (!req.user) throw ApiError.unauthorized();
+    const request = await ReportService.approveDecisionRequest(
+      req.params.id,
+      req.body.note,
+      req.user.uid
+    );
+    ApiResponse.success(res, request, 'Decision request approved');
+  }),
+
+  rejectDecisionRequest: catchAsync(async (req: Request, res: Response) => {
+    if (!req.user) throw ApiError.unauthorized();
+    const request = await ReportService.rejectDecisionRequest(
+      req.params.id,
+      req.body.note,
+      req.user.uid
+    );
+    ApiResponse.success(res, request, 'Decision request rejected');
   }),
 };
 

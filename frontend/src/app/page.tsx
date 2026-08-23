@@ -1,324 +1,238 @@
-'use client';
-import { useState, useEffect, useCallback } from "react";
-import { motion } from "framer-motion";
+"use client";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { HeroIllustration } from "../components/home/HeroIllustration";
-import { FeatureSection } from "../components/home/FeatureSection";
-import { ReportIllustration, VerificationIllustration, TransparencyIllustration } from "../components/home/FeatureIllustrations";
-import { ScrollReveal } from "../components/ui/ScrollReveal";
-import { MarkerHighlight } from "../components/ui/MarkerHighlight";
-import { TactileButton } from "../components/ui/TactileButton";
-import { FileEdit, Users, FolderOpen, ArrowRight, MapPin, Clock, AlertTriangle, CheckCircle, Flag, Building2, FileText } from "lucide-react";
 import { api } from "../lib/api";
-import { Job, Company } from "../types/user";
+import { Job } from "../types/user";
+import RecordCard from "../components/registry/RecordCard";
+import { Mono, PrimaryButton, SecondaryButton } from "../components/ui/primitives";
 
-const ease = [0.25, 0.1, 0.25, 1] as const;
+const QUESTIONS = [
+  { n: "01", label: "Is this role real?" },
+  { n: "05", label: "How long has it been up?" },
+  { n: "02", label: "Can I actually apply?" },
+  { n: "06", label: "What is the company like?" },
+  { n: "03", label: "Has anyone had a reply?" },
+  { n: "07", label: "What should I check myself?" },
+  { n: "04", label: "Is the pay honest?" },
+];
 
-function statusFromJob(job: Job): "ghost" | "suspicious" | "legitimate" {
-  if (job.isFake) return "ghost";
-  const ratio = job.upvotes / (job.upvotes + job.downvotes + 1);
-  return ratio > 0.6 ? "legitimate" : "suspicious";
+const RECORD_CONTAINS = [
+  {
+    glyph: <span className="w-2 h-2 rounded-full bg-ink mt-1.5 shrink-0" />,
+    title: "Someone's own experience",
+    body: "A first-hand account of applying, interviewing, or being told something. Attributed to a handle with a visible contribution history.",
+  },
+  {
+    glyph: <span className="w-2 h-2 bg-ink mt-1.5 shrink-0" />,
+    title: "An automated check",
+    body: "Whether the application URL still responds, whether the same text is posted elsewhere, when it last changed. Machine output, never a judgement.",
+  },
+  {
+    glyph: <span className="w-[9px] h-[7px] bg-accent rotate-45 mt-1.5 shrink-0" />,
+    title: "A moderator decision",
+    body: "Confirming a document is what it claims to be. Moderators never rule on whether a job is real.",
+  },
+  {
+    glyph: <span className="w-3 h-1 bg-ink mt-2 shrink-0" />,
+    title: "What contributors voted",
+    body: "The cheapest signal on the platform. Shown raw, with the sample size, and weighted least.",
+  },
+  {
+    glyph: <span className="w-2 h-2 rounded-full border-[1.5px] border-faint mt-1.5 shrink-0" />,
+    title: "Nothing on record",
+    body: "Marked as a blank rather than filled with a guess. Usually the most useful thing on the page.",
+    muted: true,
+  },
+];
+
+interface PublicStats {
+  listingsTracked: number;
+  recordsWithAccount: number;
+  evidencePublished: number;
+  employerResponses: number;
 }
 
-function trustScoreFromJob(job: Job): number {
-  const total = job.upvotes + job.downvotes;
-  if (total === 0) return 50;
-  return Math.round((job.upvotes / total) * 100);
-}
-
-const statusConfig = {
-  ghost: { label: "Ghost Job", icon: AlertTriangle, color: "text-red-600 bg-red-50" },
-  legitimate: { label: "Legitimate", icon: CheckCircle, color: "text-emerald-600 bg-emerald-50" },
-  suspicious: { label: "Suspicious", icon: Flag, color: "text-amber-600 bg-amber-50" },
-};
-
-export default function Home() {
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [statsLoaded, setStatsLoaded] = useState(false);
-  const [totalJobs, setTotalJobs] = useState(0);
-  const [totalCompanies, setTotalCompanies] = useState(0);
-
-  const fetchData = useCallback(async () => {
-    try {
-      const [jobRes, compRes] = await Promise.all([
-        api.jobs.list({ page: 1, limit: 3 }),
-        api.companies.list({ page: 1, limit: 3 }),
-      ]);
-      const jobRaw = jobRes as unknown as { data: Job[]; pagination?: { total: number } };
-      const compRaw = compRes as unknown as { data: Company[]; pagination?: { total: number } };
-      setJobs(jobRaw.data ?? []);
-      setCompanies(compRaw.data ?? []);
-      setTotalJobs(jobRaw.pagination?.total ?? 0);
-      setTotalCompanies(compRaw.pagination?.total ?? 0);
-      setStatsLoaded(true);
-    } catch {
-      // Silently fail on homepage — show zeros
-      setStatsLoaded(true);
-    }
-  }, []);
+export default function HomePage() {
+  const [stats, setStats] = useState<PublicStats | null>(null);
+  const [recent, setRecent] = useState<Job[]>([]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    api.analytics.publicStats().then((r) => setStats(r.data)).catch(() => {});
+    api.jobs.list({ limit: 3 }).then((r) => setRecent(r.data)).catch(() => {});
+  }, []);
 
   return (
-    <>
-      {/* ─── Hero ─── */}
-      <section className="pt-28 pb-24 md:pt-36 md:pb-32">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="flex flex-col md:flex-row items-center gap-12 md:gap-16">
-            <div className="flex-1 max-w-xl">
-              <motion.div
-                initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0, ease }}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-border mb-6"
-                style={{ fontSize: "0.8rem", backgroundColor: "var(--card)" }}
-              >
-                <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: "var(--accent)" }} />
-                <span style={{ color: "var(--muted-foreground)" }}>
-                  {statsLoaded ? `${totalJobs.toLocaleString()} reports filed and counting` : 'Loading...'}
-                </span>
-              </motion.div>
+    <div>
+      {/* Hero */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] border-b border-border-strong">
+        <div className="px-4 md:px-8 pt-12 md:pt-[72px] pb-[52px] md:pb-[60px] lg:border-r border-border">
+          <Mono tone="accent">BEFORE YOU APPLY</Mono>
+          <h1 className="mt-5 text-[38px] md:text-[52px] lg:text-[62px] leading-[1.02] tracking-[-0.04em] font-bold max-w-[19ch] text-pretty">
+            Find out what is actually known about a job.
+          </h1>
+          <p className="mt-6 font-serif text-[19px] md:text-[22px] leading-[1.5] text-ink-soft max-w-[52ch]">
+            Job listings go stale, get reposted for months, and sometimes were never really open. WorkWyse collects what
+            people can show — accounts, screenshots, automated checks — and keeps it attached to the claim it supports.
+          </p>
+          <p className="mt-4 font-serif text-[16px] md:text-[17px] leading-[1.65] text-muted max-w-[56ch]">
+            We do not decide whether a job is real. We show you the record and who checked it, and let you judge what it
+            is worth.
+          </p>
 
-              <motion.h1
-                initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.08, ease }}
-                style={{ fontFamily: "'Playfair Display', serif", fontSize: "clamp(2.2rem, 5vw, 3.5rem)", lineHeight: 1.15, fontWeight: 700 }}
-              >
-                Stop Applying<br />
-                <span className="relative inline-block">
-                  <MarkerHighlight delay={0.7}>Into The Void</MarkerHighlight>
-                  <motion.svg className="absolute -bottom-1 left-0 w-full" viewBox="0 0 200 8" preserveAspectRatio="none">
-                    <motion.path d="M 0 6 Q 50 0 100 4 Q 150 8 200 2" stroke="#2563EB" strokeWidth="2.5" fill="none" strokeLinecap="round"
-                      initial={{ pathLength: 0 }} animate={{ pathLength: 1 }}
-                      transition={{ duration: 0.6, delay: 0.8, ease: "easeOut" }} />
-                  </motion.svg>
-                </span>
-              </motion.h1>
+          <SearchBox />
 
-              <motion.p className="mt-6 max-w-md" style={{ fontSize: "1.05rem", lineHeight: 1.8, color: "var(--muted-foreground)" }}
-                initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.2, ease }}>
-                WorkWyse helps job seekers identify ghost listings, fake postings, and misleading hiring processes &mdash; before you waste your time.
-              </motion.p>
-
-              <motion.div className="mt-8 flex flex-wrap items-center gap-4"
-                initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.32, ease }}>
-                <Link href="/submit-report">
-                  <TactileButton variant="primary" className="px-7 py-3">Submit a Report</TactileButton>
-                </Link>
-                <Link href="/reports">
-                  <TactileButton variant="secondary" className="px-5 py-3">
-                    Browse Reports <ArrowRight size={16} />
-                  </TactileButton>
-                </Link>
-              </motion.div>
-
-              <motion.div className="mt-12 flex gap-8 md:gap-12"
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                transition={{ duration: 0.5, delay: 0.5 }}>
-                {[
-                  { value: statsLoaded ? totalJobs.toLocaleString() : "—", label: "Reports Filed" },
-                  { value: statsLoaded ? totalCompanies.toLocaleString() : "—", label: "Companies" },
-                  { value: "89%", label: "Accuracy Rate" },
-                ].map((stat, i) => (
-                  <motion.div key={stat.label}
-                    initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, delay: 0.55 + i * 0.08 }}>
-                    <p style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.5rem", fontWeight: 600 }}>{stat.value}</p>
-                    <p style={{ fontSize: "0.8rem", color: "var(--muted-foreground)" }}>{stat.label}</p>
-                  </motion.div>
-                ))}
-              </motion.div>
-            </div>
-            <div className="flex-1 flex justify-center">
-              <HeroIllustration />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ─── Features ─── */}
-      <section className="py-24 md:py-32">
-        <div className="max-w-6xl mx-auto px-6">
-          <ScrollReveal className="text-center mb-16 md:mb-24">
-            <p className="text-accent mb-3" style={{ fontSize: "0.85rem", fontWeight: 500, letterSpacing: "0.1em", textTransform: "uppercase" }}>How It Works</p>
-            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: "clamp(1.5rem, 3vw, 2.25rem)", fontWeight: 600 }}>
-              Building a Public Archive of <MarkerHighlight delay={0.2}>Hiring Truth</MarkerHighlight>
-            </h2>
-          </ScrollReveal>
-          <div className="space-y-24 md:space-y-32">
-            <FeatureSection icon={<div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: "rgba(37,99,235,0.1)" }}><FileEdit size={24} style={{ color: "var(--accent)" }} /></div>}
-              title="Report Your Experience" description="Submit detailed accounts of your job application journey. Document ghost listings, misleading postings, and hiring red flags." illustration={<ReportIllustration />} />
-            <FeatureSection icon={<div className="w-12 h-12 rounded-xl flex items-center justify-center bg-emerald-100"><Users size={24} className="text-emerald-700" /></div>}
-              title="Community Verification" description="Reports are reviewed and confirmed by other job seekers who had similar experiences." illustration={<VerificationIllustration />} reversed />
-            <FeatureSection icon={<div className="w-12 h-12 rounded-xl flex items-center justify-center bg-amber-50"><FolderOpen size={24} className="text-amber-700" /></div>}
-              title="Transparent Company Records" description="Every company has an open file with their hiring history and community trust score." illustration={<TransparencyIllustration />} />
-          </div>
-        </div>
-      </section>
-
-      {/* ─── Recent Reports (from API) ─── */}
-      <section className="py-24 md:py-32" style={{ backgroundColor: "rgba(237,236,235,0.4)" }}>
-        <div className="max-w-6xl mx-auto px-6">
-          <ScrollReveal className="text-center mb-14">
-            <p className="text-accent mb-3" style={{ fontSize: "0.85rem", fontWeight: 500, letterSpacing: "0.1em", textTransform: "uppercase" }}>Recent Reports</p>
-            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: "clamp(1.5rem, 3vw, 2.25rem)", fontWeight: 600 }}>From the Community Archive</h2>
-            <p className="mt-3 max-w-md mx-auto" style={{ fontSize: "0.9rem", lineHeight: 1.7, color: "var(--muted-foreground)" }}>
-              Real experiences from real job seekers, verified by the community.
-            </p>
-          </ScrollReveal>
-
-          {jobs.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {jobs.map((job, i) => {
-                const status = statusFromJob(job);
-                const trust = trustScoreFromJob(job);
-                const s = statusConfig[status];
-                const StatusIcon = s.icon;
-                const date = new Date(job.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-                return (
-                  <Link key={job._id} href={`/reports/${job._id}`} style={{ display: "block", height: "100%" }}>
-                    <motion.div
-                      className="bg-card rounded-xl border border-border p-6 relative overflow-hidden cursor-pointer group h-full"
-                      initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
-                      viewport={{ once: true, margin: "-60px" }}
-                      transition={{ duration: 0.45, delay: i * 0.08, ease }}
-                      whileHover={{ y: -4, boxShadow: "0 8px 28px -8px rgba(26,26,26,0.1)" }}
-                      style={{ boxShadow: "0 1px 3px 0 rgba(26,26,26,0.04)" }}
-                    >
-                      <div className="absolute top-0 right-0 w-10 h-10 overflow-hidden">
-                        <div className="absolute -top-5 -right-5 w-10 h-10 rotate-45 origin-bottom-left" style={{ backgroundColor: "var(--secondary)" }} />
-                      </div>
-                      <div className="flex items-start justify-between mb-3 gap-3">
-                        <div className="min-w-0">
-                          <h3 style={{ fontSize: "1.1rem", fontFamily: "'Playfair Display', serif" }}>{job.company}</h3>
-                          <p style={{ fontSize: "0.875rem", color: "var(--muted-foreground)" }}>{job.title}</p>
-                        </div>
-                        <div className="shrink-0 px-2 py-1 rounded-full text-xs font-medium" style={{
-                          backgroundColor: trust >= 70 ? "#dcfce7" : trust >= 40 ? "#fef9c3" : "#fee2e2",
-                          color: trust >= 70 ? "#166534" : trust >= 40 ? "#854d0e" : "#991b1b"
-                        }}>{trust}%</div>
-                      </div>
-                      <div className="flex flex-wrap gap-3 mb-4" style={{ fontSize: "0.8rem" }}>
-                        <span className="flex items-center gap-1" style={{ color: "var(--muted-foreground)" }}><MapPin size={13} /> {job.location}</span>
-                        <span className="flex items-center gap-1" style={{ color: "var(--muted-foreground)" }}><Clock size={13} /> {date}</span>
-                      </div>
-                      <p style={{ fontSize: "0.85rem", lineHeight: 1.6, color: "var(--muted-foreground)", marginBottom: "1rem" }}>
-                        &ldquo;{job.description.slice(0, 120)}{job.description.length > 120 ? '...' : ''}&rdquo;
-                      </p>
-                      <div className="flex items-center justify-between mt-auto">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ${s.color}`} style={{ fontSize: "0.75rem", fontWeight: 500 }}>
-                          <StatusIcon size={12} /> {s.label}
-                        </span>
-                        <span style={{ fontSize: "0.8rem", color: "var(--accent)" }}>Read full report &rarr;</span>
-                      </div>
-                    </motion.div>
-                  </Link>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="text-center py-12 bg-card rounded-xl border border-border">
-              <p style={{ fontSize: "0.9rem", color: "var(--muted-foreground)" }}>No reports yet. Be the first to submit one!</p>
-            </div>
-          )}
-
-          <div className="mt-10 text-center">
-            <Link href="/reports" className="inline-flex items-center gap-2 transition-colors duration-200 hover:opacity-80" style={{ fontSize: "0.9rem", color: "var(--accent)" }}>
-              View all reports <ArrowRight size={16} />
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ─── Companies (from API) ─── */}
-      <section className="py-24 md:py-32">
-        <div className="max-w-6xl mx-auto px-6">
-          <ScrollReveal className="text-center mb-14">
-            <p className="text-accent mb-3" style={{ fontSize: "0.85rem", fontWeight: 500, letterSpacing: "0.1em", textTransform: "uppercase" }}>Company Records</p>
-            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: "clamp(1.5rem, 3vw, 2.25rem)", fontWeight: 600 }}>Open Company Files</h2>
-            <p className="mt-3 max-w-md mx-auto" style={{ fontSize: "0.9rem", lineHeight: 1.7, color: "var(--muted-foreground)" }}>
-              Archived hiring records reviewed and scored by the community.
-            </p>
-          </ScrollReveal>
-
-          {companies.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {companies.map((company, i) => {
-                const trustPct = Math.round((company.averageRating / 5) * 100);
-                return (
-                  <ScrollReveal key={company._id} delay={i * 0.08}>
-                    <Link href={`/companies/${company._id}`}>
-                      <div className="bg-card rounded-xl border border-border shadow-sm relative overflow-hidden cursor-pointer transition-shadow duration-200 hover:shadow-md p-6">
-                        <div className="absolute top-0 left-6 px-3 py-1 rounded-b-md border-x border-b border-border" style={{ fontSize: "0.65rem", fontWeight: 500, backgroundColor: "var(--secondary)" }}>COMPANY FILE</div>
-                        <div className="mt-4 flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-lg flex items-center justify-center" style={{ backgroundColor: "var(--muted)" }}>
-                            <Building2 size={24} style={{ color: "var(--muted-foreground)" }} />
-                          </div>
-                          <div className="min-w-0">
-                            <h3 style={{ fontSize: "1.1rem", fontFamily: "'Playfair Display', serif" }}>{company.name}</h3>
-                            <p style={{ fontSize: "0.8rem", color: "var(--muted-foreground)" }}>{company.industry ?? 'Unknown'}</p>
-                          </div>
-                        </div>
-                        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-                          <div className="p-2 rounded-lg" style={{ backgroundColor: "var(--background)" }}>
-                            <p style={{ fontFamily: "'Playfair Display', serif", fontSize: "1rem", fontWeight: 600 }}>{company.totalReports}</p>
-                            <p style={{ fontSize: "0.65rem", color: "var(--muted-foreground)" }}>Reports</p>
-                          </div>
-                          <div className="p-2 rounded-lg" style={{ backgroundColor: "var(--background)" }}>
-                            <p style={{ fontFamily: "'Playfair Display', serif", fontSize: "1rem", fontWeight: 600 }}>{company.averageRating.toFixed(1)}</p>
-                            <p style={{ fontSize: "0.65rem", color: "var(--muted-foreground)" }}>Rating</p>
-                          </div>
-                          <div className="p-2 rounded-lg" style={{ backgroundColor: "var(--background)" }}>
-                            <p style={{ fontFamily: "'Playfair Display', serif", fontSize: "1rem", fontWeight: 600 }}>{trustPct}%</p>
-                            <p style={{ fontSize: "0.65rem", color: "var(--muted-foreground)" }}>Trust</p>
-                          </div>
-                        </div>
-                      </div>
-                    </Link>
-                  </ScrollReveal>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="text-center py-12 bg-card rounded-xl border border-border">
-              <p style={{ fontSize: "0.9rem", color: "var(--muted-foreground)" }}>No companies on file yet.</p>
-            </div>
-          )}
-
-          <div className="mt-10 text-center">
-            <Link href="/companies" className="inline-flex items-center gap-2 transition-colors duration-200 hover:opacity-80" style={{ fontSize: "0.9rem", color: "var(--accent)" }}>
-              View all companies <ArrowRight size={16} />
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ─── CTA Banner ─── */}
-      <section className="py-24 md:py-28">
-        <div className="max-w-4xl mx-auto px-6 text-center">
-          <ScrollReveal>
-            <div className="bg-card rounded-2xl border border-border p-12 md:p-16 shadow-sm relative overflow-hidden">
-              <div className="absolute top-6 left-6 pointer-events-none select-none" style={{ fontFamily: "'Playfair Display', serif", fontSize: "4rem", fontWeight: 700, transform: "rotate(-12deg)", opacity: 0.04 }}>VERIFIED</div>
-              <div className="absolute bottom-6 right-6 pointer-events-none select-none" style={{ fontFamily: "'Playfair Display', serif", fontSize: "3rem", fontWeight: 700, transform: "rotate(8deg)", opacity: 0.04 }}>FILED</div>
-              <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: "clamp(1.5rem, 3vw, 2.25rem)", fontWeight: 600 }}>
-                Every Report Makes Hiring More Honest
-              </h2>
-              <p className="mt-4 max-w-lg mx-auto" style={{ fontSize: "1rem", lineHeight: 1.8, color: "var(--muted-foreground)" }}>
-                Join the community building the most transparent archive of hiring practices. Your experience matters.
-              </p>
-              <div className="mt-8">
-                <Link href="/submit-report">
-                  <TactileButton variant="primary" className="px-8 py-3">Submit Your First Report</TactileButton>
+          <div className="mt-10 pt-5 border-t border-border">
+            <Mono>EVERY RECORD ANSWERS THE SAME SEVEN QUESTIONS</Mono>
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-8">
+              {QUESTIONS.map((q) => (
+                <div key={q.n} className="flex gap-3 py-2.5 border-b border-border-soft">
+                  <span className="font-mono text-[10px] text-faint w-4">{q.n}</span>
+                  <span className="text-[15px]">{q.label}</span>
+                </div>
+              ))}
+              <div className="flex items-center py-2.5 border-b border-border-soft">
+                <Link href="/registry" className="font-mono text-[10px] tracking-[0.1em] text-accent">
+                  SEE A FULL RECORD →
                 </Link>
               </div>
             </div>
-          </ScrollReveal>
+          </div>
         </div>
-      </section>
-    </>
+
+        {/* what goes into a record */}
+        <div className="px-4 md:px-8 pt-10 md:pt-[72px] pb-[60px]">
+          <Mono>WHAT GOES INTO A RECORD</Mono>
+          <div className="mt-[18px] flex flex-col">
+            {RECORD_CONTAINS.map((item) => (
+              <div key={item.title} className="flex gap-3.5 py-3.5 border-b border-border-soft last:border-b-0">
+                {item.glyph}
+                <div>
+                  <div className={`text-[15px] font-semibold ${item.muted ? "text-muted" : ""}`}>{item.title}</div>
+                  <div className="mt-1 text-[13px] leading-[1.6] text-muted">{item.body}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {stats && (
+            <div className="mt-8 p-5 bg-panel">
+              <Mono tone="muted">THE PLATFORM SO FAR</Mono>
+              <div className="mt-3.5 flex flex-col gap-2.5">
+                <StatLine label="Listings tracked" value={stats.listingsTracked} />
+                <StatLine label="Records with a first-hand account" value={stats.recordsWithAccount} />
+                <StatLine label="Evidence items published" value={stats.evidencePublished} />
+                <StatLine label="Employer responses on record" value={stats.employerResponses} />
+              </div>
+              <p className="mt-3.5 text-[12.5px] leading-[1.6] text-muted">
+                Most records are thin. We show the thinness rather than hiding it — a record built by three people is
+                labelled as one.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Recent records */}
+      {recent.length > 0 && (
+        <>
+          <div className="px-4 md:px-8 py-8 flex items-baseline gap-4">
+            <h2 className="text-2xl font-bold tracking-[-0.025em]">Records people are looking at today</h2>
+            <Link href="/activity" className="ml-auto font-mono text-[10px] tracking-[0.1em] text-accent whitespace-nowrap">
+              SEE ALL RECENT ACTIVITY →
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 border-t border-b border-border-strong">
+            {recent.map((job) => (
+              <RecordCard key={job._id} job={job} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* what we don't claim */}
+      <div className="grid grid-cols-1 md:grid-cols-2 border-b border-border-strong">
+        <div className="px-4 md:px-8 py-10 md:py-11 md:border-r border-border">
+          <Mono>WHAT WORKWYSE DOES NOT CLAIM</Mono>
+          <div className="mt-5 flex flex-col gap-4">
+            <p className="font-serif text-[18px] md:text-[19px] leading-[1.55] max-w-[48ch]">
+              That a listing is fake. We have no way to know, and neither does anyone who has not worked there.
+            </p>
+            <p className="font-serif text-[18px] md:text-[19px] leading-[1.55] max-w-[48ch]">
+              That a company is dishonest. A dead application page and six reposts are facts about a listing, not a
+              verdict on an employer.
+            </p>
+            <p className="font-serif text-[18px] md:text-[19px] leading-[1.55] max-w-[48ch]">
+              That our score is objective. It is a summary of the record, it moves when the record moves, and it is
+              always optional to look at.
+            </p>
+          </div>
+          <Link href="/about" className="inline-block mt-6 font-mono text-[10px] tracking-[0.1em] text-accent border-b border-border-mid pb-0.5">
+            READ HOW THIS WORKS IN FULL →
+          </Link>
+        </div>
+        <div className="px-4 md:px-8 py-10 md:py-11 bg-ink text-background">
+          <Mono className="!text-faint">IF YOU HAVE APPLIED TO SOMETHING</Mono>
+          <h2 className="mt-[18px] text-[26px] md:text-[32px] leading-[1.12] tracking-[-0.03em] font-bold max-w-[20ch]">
+            The record only exists because people file what happened to them.
+          </h2>
+          <p className="mt-4 font-serif text-[17px] md:text-[18px] leading-[1.6] text-border-mid max-w-[48ch]">
+            An interview that went nowhere, a rejection, an offer, a recruiter who vanished. Attach a screenshot if you
+            have one; say so if you do not. Both are useful, and they are labelled differently.
+          </p>
+          <div className="mt-6 flex gap-3 flex-wrap">
+            <Link href="/contribute">
+              <PrimaryButton className="!bg-background !text-ink hover:!bg-border-mid">Add what you know</PrimaryButton>
+            </Link>
+            <Link href="/about">
+              <SecondaryButton className="!border-ink-soft !text-border-mid hover:!border-background hover:!text-background">
+                How contributions are handled
+              </SecondaryButton>
+            </Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatLine({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex justify-between text-[13.5px]">
+      <span className="text-muted">{label}</span>
+      <span className="font-mono font-semibold">{value.toLocaleString()}</span>
+    </div>
+  );
+}
+
+function SearchBox() {
+  return (
+    <form
+      action="/registry"
+      className="mt-9 border border-border-strong bg-card"
+    >
+      <div className="flex items-center gap-3 px-4 h-14 border-b border-border-soft">
+        <span className="w-[11px] h-[11px] rounded-full border-[1.5px] border-faint shrink-0" />
+        <input
+          name="search"
+          placeholder="Paste a job URL, or search a title or company"
+          className="flex-1 min-w-0 text-[16px] md:text-[17px] placeholder:text-faint outline-none bg-transparent"
+        />
+        <button type="submit" className="text-[13.5px] font-semibold bg-ink text-background px-[18px] py-[11px] whitespace-nowrap">
+          Look it up
+        </button>
+      </div>
+      <div className="flex items-center gap-3.5 px-4 py-2.5 flex-wrap">
+        <Mono>TRY</Mono>
+        <Link href="/registry" className="text-[12.5px] text-accent border-b border-border-mid">
+          Listings reposted 3+ times
+        </Link>
+        <Link href="/registry?signal=accounts" className="text-[12.5px] text-accent border-b border-border-mid">
+          Listings with a first-hand account
+        </Link>
+        <Link href="/registry?signal=dead" className="text-[12.5px] text-accent border-b border-border-mid">
+          Application pages that are dead
+        </Link>
+      </div>
+    </form>
   );
 }

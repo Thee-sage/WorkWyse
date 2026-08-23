@@ -1,5 +1,9 @@
 import { ApiResponse } from '../types/api';
-import { Job, Company, FlagReport, Evidence } from '../types/user';
+import {
+  Job, Company, FlagReport, Evidence, CompanyReview, CompanyStats, CompanyPatternMonth,
+  ContributorStats, JobRecord, ActivityLogEntry, AppNotification, UrlCheck, ReviewStage,
+  ReviewOutcome, EvidenceStatus, Comment, PendingEvidenceItem,
+} from '../types/user';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
@@ -18,6 +22,25 @@ export function setAccessToken(token: string | null): void {
 
 export function clearTokens(): void {
   accessToken = null;
+  clearAdminUnlock();
+}
+
+// ─── Admin unlock token (in-memory only, same reasoning as accessToken) ──
+// The passphrase second factor for the admin surface. Never persisted —
+// closing the tab or refreshing means unlocking again, same as it should
+// for a step-up-auth token guarding an admin action.
+let adminUnlockToken: string | null = null;
+
+export function getAdminUnlockToken(): string | null {
+  return adminUnlockToken;
+}
+
+export function setAdminUnlockToken(token: string | null): void {
+  adminUnlockToken = token;
+}
+
+export function clearAdminUnlock(): void {
+  adminUnlockToken = null;
 }
 
 // ─── Token Refresh Logic ────────────────────────────────────────────
@@ -86,6 +109,17 @@ async function apiFetch<T = unknown>(
 
   if (auth && accessToken) {
     headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+
+  // Attach the admin unlock token only to the routes that actually require
+  // it server-side — not to every request — so a stale/foreign unlock token
+  // never rides along with unrelated calls.
+  const needsAdminUnlock =
+    endpoint.startsWith('/admin/') && endpoint !== '/admin/unlock'
+      ? true
+      : /^\/reports\/[^/]+\/status$/.test(endpoint) || endpoint.startsWith('/reports/decision-requests');
+  if (needsAdminUnlock && adminUnlockToken) {
+    headers['X-Admin-Unlock'] = adminUnlockToken;
   }
 
   // Finding 7.3: Always include credentials so the httpOnly cookie is sent
@@ -220,8 +254,19 @@ export const api = {
     list: (params: PaginationOpts = {}) =>
       apiFetch<Job[]>(`/jobs${buildQuery(params)}`, { method: 'GET', auth: false }),
 
+    /** Registry listing with computed "signal" filters (dead/repost/accounts/thin/fake). */
+    registry: (params: PaginationOpts & { signal?: string } = {}) =>
+      apiFetch<Array<{ job: Job; repostCount: number; contributorsCount: number }>>(
+        `/jobs/registry${buildQuery(params)}`,
+        { method: 'GET', auth: false }
+      ),
+
     get: (id: string) =>
       apiFetch<Job>(`/jobs/${id}`, { method: 'GET', auth: false }),
+
+    /** Everything the Job Record page needs in one call. */
+    getRecord: (id: string) =>
+      apiFetch<JobRecord>(`/jobs/${id}/record`, { method: 'GET', auth: false }),
 
     extractUrl: (jobUrl: string) =>
       apiFetch<import('../types/extraction').ExtractionResult>('/jobs/extract', {
@@ -265,12 +310,43 @@ export const api = {
     getUserVote: (id: string) =>
       apiFetch<{ userVote: 'upvote' | 'downvote' | null }>(`/jobs/${id}/vote`),
 
-    addReview: (id: string, data: { rating: number; comment: string }) =>
+    addReview: (id: string, data: { rating?: number; comment: string; stage?: ReviewStage; outcome?: ReviewOutcome; salaryQuoted?: string }) =>
       apiFetch(`/jobs/${id}/reviews`, { method: 'POST', body: data }),
 
     // Finding 11.2 — delete review (owner or admin)
     deleteReview: (id: string, reviewId: string) =>
       apiFetch(`/jobs/${id}/reviews/${reviewId}`, { method: 'DELETE' }),
+
+    // ── Evidence ──────────────────────────────────────────────────
+    addEvidence: (id: string, data: Evidence) =>
+      apiFetch<Evidence>(`/jobs/${id}/evidence`, { method: 'POST', body: data }),
+
+    updateEvidenceStatus: (id: string, evidenceId: string, data: { status: EvidenceStatus; note?: string }) =>
+      apiFetch<Evidence>(`/jobs/${id}/evidence/${evidenceId}`, { method: 'PATCH', body: data }),
+
+    // ── URL liveness check (on-demand, not a cron) ─────────────────
+    checkUrl: (id: string) =>
+      apiFetch<UrlCheck>(`/jobs/${id}/check-url`, { method: 'POST', auth: false }),
+
+    // ── Watch list ──────────────────────────────────────────────────
+    watchStatus: (id: string) =>
+      apiFetch<{ watching: boolean }>(`/jobs/${id}/watch`, { method: 'GET' }),
+
+    watch: (id: string) =>
+      apiFetch<{ watching: boolean }>(`/jobs/${id}/watch`, { method: 'POST' }),
+
+    unwatch: (id: string) =>
+      apiFetch<{ watching: boolean }>(`/jobs/${id}/watch`, { method: 'DELETE' }),
+
+    watching: (params: PaginationOpts = {}) =>
+      apiFetch<Job[]>(`/jobs/watching${buildQuery(params)}`, { method: 'GET' }),
+
+    myContributions: (params: PaginationOpts = {}) =>
+      apiFetch<Job[]>(`/jobs/mine/contributions${buildQuery(params)}`, { method: 'GET' }),
+
+    // ── Moderation ──────────────────────────────────────────────────
+    evidenceQueue: (params: PaginationOpts = {}) =>
+      apiFetch<PendingEvidenceItem[]>(`/jobs/moderation/evidence-queue${buildQuery(params)}`, { method: 'GET' }),
   },
 
   // ─── Upload ──────────────────────────────────────────────────────
@@ -327,6 +403,10 @@ export const api = {
     get: (id: string) =>
       apiFetch<Company>(`/companies/${id}`, { method: 'GET', auth: false }),
 
+    /** Resolves (or transparently creates) a company profile by its free-text name. */
+    resolveByName: (name: string) =>
+      apiFetch<Company>(`/companies/resolve/${encodeURIComponent(name)}`, { method: 'GET', auth: false }),
+
     create: (data: { name: string; website?: string; description?: string; industry?: string }) =>
       apiFetch<Company>('/companies', { method: 'POST', body: data }),
 
@@ -335,11 +415,23 @@ export const api = {
 
     remove: (id: string) =>
       apiFetch(`/companies/${id}`, { method: 'DELETE' }),
+
+    stats: (id: string) =>
+      apiFetch<CompanyStats>(`/companies/${id}/stats`, { method: 'GET', auth: false }),
+
+    patterns: (id: string) =>
+      apiFetch<CompanyPatternMonth[]>(`/companies/${id}/patterns`, { method: 'GET', auth: false }),
+
+    reviews: (id: string, params: PaginationOpts = {}) =>
+      apiFetch<CompanyReview[]>(`/companies/${id}/reviews${buildQuery(params)}`, { method: 'GET', auth: false }),
+
+    addReview: (id: string, data: { comment: string; stage?: string; outcome?: string }) =>
+      apiFetch<CompanyReview>(`/companies/${id}/reviews`, { method: 'POST', body: data }),
   },
 
   // ─── Flag Reports (moderation) ──────────────────────────────────
   reports: {
-    create: (data: { targetType: 'job' | 'company'; targetId: string; reason: string; description?: string; evidence?: Evidence[] }) =>
+    create: (data: { targetType: 'job' | 'company'; targetId: string; targetSubId?: string; reason: string; description?: string }) =>
       apiFetch<FlagReport>('/reports', { method: 'POST', body: data }),
 
     mine: (params: PaginationOpts = {}) =>
@@ -348,12 +440,52 @@ export const api = {
     adminList: (params: PaginationOpts = {}) =>
       apiFetch<FlagReport[]>(`/reports${buildQuery(params)}`, { method: 'GET' }),
 
+    /** Admin-only direct override. Requires an unlocked admin session. */
     updateStatus: (id: string, status: 'reviewed' | 'dismissed') =>
       apiFetch<FlagReport>(`/reports/${id}/status`, { method: 'PATCH', body: { status } }),
+
+    setEmployerReply: (id: string, text: string) =>
+      apiFetch<FlagReport>(`/reports/${id}/employer-reply`, { method: 'PATCH', body: { text } }),
+
+    // ── Moderator decision requests ──────────────────────────────────
+    // A moderator's path to a report decision: propose it, then wait for
+    // an admin to approve or reject. Limited to one per day server-side.
+
+    requestDecision: (id: string, proposedStatus: 'reviewed' | 'dismissed', note?: string) =>
+      apiFetch<{ _id: string; status: string }>(`/reports/${id}/decision-requests`, {
+        method: 'POST',
+        body: { proposedStatus, note },
+      }),
+
+    /** Admin-only — requires an unlocked admin session. */
+    decisionRequests: (params: PaginationOpts & { status?: string } = {}) =>
+      apiFetch<
+        Array<{
+          _id: string;
+          reportId: FlagReport;
+          requestedBy: { username: string };
+          proposedStatus: 'reviewed' | 'dismissed';
+          note?: string;
+          status: 'pending' | 'approved' | 'rejected';
+          createdAt: string;
+        }>
+      >(`/reports/decision-requests${buildQuery(params)}`, { method: 'GET' }),
+
+    approveDecisionRequest: (id: string, note?: string) =>
+      apiFetch(`/reports/decision-requests/${id}/approve`, { method: 'PATCH', body: { note } }),
+
+    rejectDecisionRequest: (id: string, note?: string) =>
+      apiFetch(`/reports/decision-requests/${id}/reject`, { method: 'PATCH', body: { note } }),
   },
 
   // ─── Analytics ─────────────────────────────────────────────────
   analytics: {
+    /** Public platform-wide stats — no auth required. */
+    publicStats: () =>
+      apiFetch<{ listingsTracked: number; recordsWithAccount: number; evidencePublished: number; employerResponses: number; companiesTracked: number }>(
+        '/analytics/public', { method: 'GET', auth: false }
+      ),
+
     dashboard: () =>
       apiFetch<any>('/analytics/dashboard', { method: 'GET' }),
 
@@ -367,7 +499,7 @@ export const api = {
   // ─── Notifications ─────────────────────────────────────────────
   notifications: {
     list: (params: PaginationOpts = {}) =>
-      apiFetch<any>(`/notifications${buildQuery(params)}`, { method: 'GET' }),
+      apiFetch<AppNotification[]>(`/notifications${buildQuery(params)}`, { method: 'GET' }),
 
     unreadCount: () =>
       apiFetch<{ unreadCount: number }>('/notifications/unread-count', { method: 'GET' }),
@@ -385,10 +517,10 @@ export const api = {
   // ─── Comments ──────────────────────────────────────────────────
   comments: {
     list: (jobId: string, params: PaginationOpts = {}) =>
-      apiFetch<any>(`/jobs/${jobId}/comments${buildQuery(params)}`, { method: 'GET', auth: false }),
+      apiFetch<Comment[]>(`/jobs/${jobId}/comments${buildQuery(params)}`, { method: 'GET', auth: false }),
 
     create: (jobId: string, body: string) =>
-      apiFetch<any>(`/jobs/${jobId}/comments`, { method: 'POST', body: { body } }),
+      apiFetch<Comment>(`/jobs/${jobId}/comments`, { method: 'POST', body: { body } }),
 
     delete: (jobId: string, commentId: string) =>
       apiFetch(`/jobs/${jobId}/comments/${commentId}`, { method: 'DELETE' }),
@@ -396,11 +528,15 @@ export const api = {
 
   // ─── Activity Feed ─────────────────────────────────────────────
   activity: {
+    /** Public, site-wide transparency feed (the Activity screen). */
+    feed: (params: PaginationOpts = {}) =>
+      apiFetch<ActivityLogEntry[]>(`/activity/feed${buildQuery(params)}`, { method: 'GET', auth: false }),
+
     forTarget: (targetType: string, targetId: string, params: PaginationOpts = {}) =>
-      apiFetch<any>(`/activity/${targetType}/${targetId}${buildQuery(params)}`, { method: 'GET', auth: false }),
+      apiFetch<ActivityLogEntry[]>(`/activity/${targetType}/${targetId}${buildQuery(params)}`, { method: 'GET', auth: false }),
 
     adminLog: (params: PaginationOpts = {}) =>
-      apiFetch<any>(`/activity${buildQuery(params)}`, { method: 'GET' }),
+      apiFetch<ActivityLogEntry[]>(`/activity${buildQuery(params)}`, { method: 'GET' }),
   },
 
   // ─── Export / Import ───────────────────────────────────────────
@@ -415,8 +551,27 @@ export const api = {
       ),
   },
 
+  // ─── Users (public contributor standing) ────────────────────────
+  users: {
+    contributorStats: (username: string) =>
+      apiFetch<ContributorStats>(`/users/${encodeURIComponent(username)}/stats`, { method: 'GET', auth: false }),
+  },
+
   // ─── Admin ─────────────────────────────────────────────────────
   admin: {
+    /** Second-factor unlock. Stores the returned token for subsequent admin calls. */
+    unlock: async (passphrase: string) => {
+      const res = await apiFetch<{ unlockToken: string; expiresInMs: number }>('/admin/unlock', {
+        method: 'POST',
+        body: { passphrase },
+      });
+      setAdminUnlockToken(res.data.unlockToken);
+      return res;
+    },
+
+    lock: () => clearAdminUnlock(),
+    isUnlocked: () => getAdminUnlockToken() !== null,
+
     listUsers: (params: PaginationOpts = {}) =>
       apiFetch<any>(`/admin/users${buildQuery(params)}`, { method: 'GET' }),
 

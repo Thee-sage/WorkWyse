@@ -2,55 +2,96 @@
 
 :root {
   --font-size: 16px;
-  --background: #F7F6F3;
-  --foreground: #1A1A1A;
-  --card: #FFFFFF;
-  --card-foreground: #1A1A1A;
-  --popover: #FFFFFF;
-  --popover-foreground: #1A1A1A;
-  --primary: #1A1A1A;
-  --primary-foreground: #FFFFFF;
-  --secondary: #EDECEB;
-  --secondary-foreground: #1A1A1A;
-  --muted: #E3E2E0;
-  --muted-foreground: #6B6B6B;
-  --accent: #2563EB;
-  --accent-foreground: #FFFFFF;
-  --destructive: #E5484D;
-  --destructive-foreground: #FFFFFF;
-  --border: rgba(26, 26, 26, 0.1);
-  --input-background: #FFFFFF;
+
+  /* WorkWyse "public record" palette */
+  /* Brightened: the previous --outer/--background pairing (#dde3de / #f5f8f5)
+     read as a dim, slightly green-grey page. --outer is now unused (the body
+     paints --background directly, see layout.tsx) but is kept as an alias so
+     nothing referencing it breaks. --background and --panel are lifted much
+     closer to true white while --card stays pure white so cards still read
+     as a distinct surface above the page. */
+  --outer: #ffffff;
+  --background: #ffffff;
+  --foreground: #141c18;
+  --card: #ffffff;
+  --card-foreground: #141c18;
+
+  --ink: #141c18;
+  --ink-soft: #3d4a44;
+  --muted: #5e6b64;
+  --muted-foreground: #7d8a83;
+  --faint: #a8b3ac;
+  --faintest: #bdc7c0;
+
+  --border: #e2e8e4;
+  --border-strong: #141c18;
+  --border-soft: #edf1ee;
+  --border-mid: #dbe4de;
+
+  --panel: #f7f9f8;
+  --panel-teal: #eef6f2;
+  --panel-teal-soft: #f7fbf9;
+  --panel-amber: #fdf8ef;
+
+  --accent: #0f6b60;
+  --accent-foreground: #f5f8f5;
+  --amber: #c99b3a;
+  --amber-ink: #9a7223;
+
+  --destructive: #b34a3c;
+  --destructive-foreground: #ffffff;
+
+  --input-background: #ffffff;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --radius: 0.625rem;
+  --radius: 0px;
 }
 
 @theme inline {
+  --color-outer: var(--outer);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-faint: var(--faint);
+  --color-faintest: var(--faintest);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-border-soft: var(--border-soft);
+  --color-border-mid: var(--border-mid);
+
+  --color-panel: var(--panel);
+  --color-panel-teal: var(--panel-teal);
+  --color-panel-teal-soft: var(--panel-teal-soft);
+  --color-panel-amber: var(--panel-amber);
+
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-amber: var(--amber);
+  --color-amber-ink: var(--amber-ink);
+
   --color-destructive: var(--destructive);
-  --color-border: var(--border);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --font-sans: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Newsreader', ui-serif, Georgia, serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
 }
 
 @layer base {
   * {
     box-sizing: border-box;
-    margin: 0;
-    padding: 0;
   }
 
   html {
@@ -59,58 +100,60 @@
   }
 
   body {
-    background-color: var(--background);
+    background-color: var(--outer);
     color: var(--foreground);
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     min-height: 100vh;
-    line-height: 1.6;
-  }
-
-  h1, h2, h3 {
-    font-family: 'Playfair Display', serif;
-    font-weight: 600;
-    line-height: 1.3;
+    line-height: 1.5;
   }
 
   a {
+    color: var(--accent);
     text-decoration: none;
-    color: inherit;
+  }
+  a:hover {
+    color: var(--ink);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
   }
 
   button {
     cursor: pointer;
+    font-family: inherit;
   }
 
-  /* Remove ugly blue outline on click for all interactive elements */
   *:focus {
     outline: none;
   }
-
-  /* Restore a clean, subtle outline for keyboard navigation (accessibility) */
   *:focus-visible {
-    outline: 2px solid var(--foreground);
+    outline: 2px solid var(--ink);
     outline-offset: 2px;
-    border-radius: var(--radius-sm);
   }
 
   input, textarea, select {
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-sans);
   }
+}
+
+/* Editorial serif copy — used for the longer explanatory sentences throughout */
+.font-serif em {
+  font-style: italic;
 }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--secondary);
+  background: var(--panel);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--muted);
-  border-radius: 4px;
+  background: var(--border-mid);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--muted-foreground);
+  background: var(--faint);
 }

@@ -5,6 +5,11 @@ import { catchAsync } from '../utils/catchAsync';
 import { ApiResponse } from '../utils/ApiResponse';
 
 const AnalyticsController = {
+  getPublicStats: catchAsync(async (_req: Request, res: Response) => {
+    const stats = await AnalyticsService.getPublicStats();
+    ApiResponse.success(res, stats);
+  }),
+
   getDashboard: catchAsync(async (_req: Request, res: Response) => {
     const stats = await AnalyticsService.getDashboardStats();
     ApiResponse.success(res, stats, 'Dashboard stats retrieved');

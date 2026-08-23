@@ -9,7 +9,9 @@ interface PaginationParams {
 
 class ActivityLogService {
   /**
-   * Write an activity log entry.
+   * Write an activity log entry. Pass `'system'` as `actorUid` for automated
+   * entries (e.g. a URL liveness check) that aren't attributable to a user —
+   * those are recorded with actorUsername 'SYSTEM' and no actorId.
    * Silently swallows errors so a logging failure never breaks a business operation.
    */
   static async log(
@@ -20,6 +22,11 @@ class ActivityLogService {
     meta?: Record<string, unknown>
   ): Promise<void> {
     try {
+      if (actorUid === 'system') {
+        await ActivityLog.create({ actorUsername: 'SYSTEM', action, targetType, targetId, meta });
+        return;
+      }
+
       const user = await User.findOne({ uid: actorUid }).select('_id username');
       if (!user) return; // actor vanished — skip silently
 
@@ -35,6 +42,21 @@ class ActivityLogService {
       // Never throw — logging must not break business logic
       logger.error('ActivityLogService.log failed', { err, actorUid, action });
     }
+  }
+
+  /**
+   * Public transparency feed (Activity screen) — like getAll but safe to
+   * expose without authentication: excludes role_changed (internal admin
+   * action on a user account) and any entries targeting a user directly.
+   */
+  static async getFeed({ page, limit }: PaginationParams) {
+    const skip = (page - 1) * limit;
+    const filter = { action: { $ne: 'role_changed' as ActivityAction }, targetType: { $ne: 'user' as ActivityTargetType } };
+    const [data, total] = await Promise.all([
+      ActivityLog.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).select('-__v'),
+      ActivityLog.countDocuments(filter),
+    ]);
+    return { data, total, page, totalPages: Math.ceil(total / limit) };
   }
 
   /**

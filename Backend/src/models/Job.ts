@@ -3,16 +3,37 @@ import mongoose, { Document, Schema } from 'mongoose';
 // ─── Interfaces ─────────────────────────────────────────────────────
 
 export interface IEvidence {
+  _id?: mongoose.Types.ObjectId;
   type: 'image' | 'url' | 'text';
   value: string;
+  // Evidence verification workflow — a moderator confirms a document is what
+  // it claims to be. This is never a ruling on whether the job itself is real.
+  status: 'pending' | 'verified' | 'unverifiable' | 'redacted';
+  note?: string;
+  addedBy?: string; // username
+  addedAt?: Date;
+  verifiedBy?: string; // moderator username
+  verifiedAt?: Date;
 }
 
 export interface IReview extends Document {
   jobId: mongoose.Types.ObjectId;
-  rating: number;
+  rating?: number;
   comment: string;
   author: string;
+  // First-hand-account structure (Q1/Q3/Q4 on a job record).
+  stage?: 'applied' | 'interviewed' | 'offered';
+  outcome?: 'no_response' | 'rejected' | 'on_hold' | 'hired';
+  salaryQuoted?: string;
   createdAt: Date;
+}
+
+export interface IUrlCheck {
+  checkedAt: Date;
+  ok: boolean;
+  statusCode?: number;
+  consecutiveFailures: number;
+  lastSuccessAt?: Date;
 }
 
 export interface IVote extends Document {
@@ -39,6 +60,7 @@ export interface IJob extends Document {
   evidence: IEvidence[];
   hasEvidence: boolean;
   reviews: IReview[];
+  urlCheck?: IUrlCheck;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -49,17 +71,41 @@ const evidenceSchema = new Schema(
   {
     type: { type: String, enum: ['image', 'url', 'text'], required: true },
     value: { type: String, required: true, trim: true },
+    status: {
+      type: String,
+      enum: ['pending', 'verified', 'unverifiable', 'redacted'],
+      default: 'pending',
+    },
+    note: { type: String, trim: true, maxlength: 1000 },
+    addedBy: { type: String, trim: true },
+    addedAt: { type: Date, default: Date.now },
+    verifiedBy: { type: String, trim: true },
+    verifiedAt: { type: Date },
   },
-  { _id: false }
+  { _id: true }
 );
 
 const reviewSchema = new Schema<IReview>({
   jobId: { type: Schema.Types.ObjectId, ref: 'Job', required: true },
-  rating: { type: Number, required: true, min: 1, max: 5 },
+  rating: { type: Number, min: 1, max: 5 },
   comment: { type: String, required: true, trim: true },
   author: { type: String, required: true, trim: true },
+  stage: { type: String, enum: ['applied', 'interviewed', 'offered'] },
+  outcome: { type: String, enum: ['no_response', 'rejected', 'on_hold', 'hired'] },
+  salaryQuoted: { type: String, trim: true, maxlength: 100 },
   createdAt: { type: Date, default: Date.now },
 });
+
+const urlCheckSchema = new Schema<IUrlCheck>(
+  {
+    checkedAt: { type: Date, required: true },
+    ok: { type: Boolean, required: true },
+    statusCode: { type: Number },
+    consecutiveFailures: { type: Number, default: 0 },
+    lastSuccessAt: { type: Date },
+  },
+  { _id: false }
+);
 
 const voteSchema = new Schema<IVote>({
   jobId: { type: Schema.Types.ObjectId, ref: 'Job', required: true },
@@ -105,6 +151,7 @@ const jobSchema = new Schema<IJob>(
     },
     hasEvidence: { type: Boolean, default: false },
     reviews: [reviewSchema],
+    urlCheck: { type: urlCheckSchema, default: undefined },
   },
   { timestamps: true }
 );

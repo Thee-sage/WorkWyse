@@ -1,11 +1,14 @@
 import dns from 'dns';
 dns.setDefaultResultOrder('ipv4first');
 
-// Load and validate env FIRST — crashes if misconfigured
+// Load and validate env FIRST — refuses to start if misconfigured
 import env from './config/env';
 import logger from './config/logger';
 
 // ─── TraceOps Observability ──────────────────────────────────────────
+// NOTE: this ships request telemetry to an external endpoint. Leave
+// TRACEOPS_ENDPOINT unset in production unless that destination is covered
+// by the same confidentiality guarantees as the database.
 import TraceOps from 'traceops-sdk';
 if (env.TRACEOPS_ENDPOINT) {
   TraceOps.init({
@@ -13,111 +16,107 @@ if (env.TRACEOPS_ENDPOINT) {
     serviceName: 'workwyse-backend',
     apiKey: env.TRACEOPS_API_KEY || undefined,
   });
-  logger.info('🔍 TraceOps observability enabled');
+  logger.info('TraceOps observability enabled', { endpoint: env.TRACEOPS_ENDPOINT });
 }
 
-import express from 'express';
-import cookieParser from 'cookie-parser';
-import helmet from 'helmet';
-import hpp from 'hpp';
-import morgan from 'morgan';
-import { corsMiddleware } from './middleware/cors';
-import { globalLimiter } from './middleware/rateLimiter';
-import { errorHandler } from './middleware/errorHandler';
+import type { Server } from 'http';
+import createApp from './createApp';
 import { connectDB, disconnectDB } from './config/database';
+import { warnIfScaledOutWithMemoryStore } from './middleware/rateLimiter';
 
-// Routes
-import authRoutes from './routes/auth';
-import jobsRouter from './routes/jobs';
-import companiesRouter from './routes/companies';
-import reportsRouter from './routes/reports';
-import uploadRouter from './routes/upload';
-import analyticsRouter from './routes/analytics';
-import activityRouter from './routes/activity';
-import notificationsRouter from './routes/notifications';
-import commentsRouter from './routes/comments';
-import exportRouter from './routes/export';
-import adminRouter from './routes/admin';
+const app = createApp();
 
-const app = express();
+// ─── Process-level crash guards ──────────────────────────────────────
+// A rejected promise that nobody handles terminates the process by default
+// in modern Node. On Azure that is a hard restart mid-request for every
+// in-flight caller. These handlers log the fault and keep serving; a truly
+// corrupt process is still replaced, because uncaughtException exits after
+// draining connections.
+let server: Server | undefined;
+let shuttingDown = false;
 
-// ─── Security Middleware ────────────────────────────────────────────
-app.use(helmet());
-app.use(hpp());
-app.use(corsMiddleware);
-app.use(globalLimiter);
-
-// ─── Body Parsing ───────────────────────────────────────────────────
-app.use(express.json({ limit: '10kb' }));
-app.use(express.urlencoded({ extended: true, limit: '10kb' }));
-app.use(cookieParser());
-
-// ─── Logging ────────────────────────────────────────────────────────
-app.use(
-  morgan('dev', {
-    stream: { write: (message: string) => logger.http(message.trim()) },
-  })
-);
-
-// ─── Routes ─────────────────────────────────────────────────────────
-app.use('/api/auth', authRoutes);
-app.use('/api/jobs', jobsRouter);
-app.use('/api/jobs/:id/comments', commentsRouter);
-app.use('/api/companies', companiesRouter);
-app.use('/api/reports', reportsRouter);
-app.use('/api/upload', uploadRouter);
-app.use('/api/analytics', analyticsRouter);
-app.use('/api/activity', activityRouter);
-app.use('/api/notifications', notificationsRouter);
-app.use('/api/export', exportRouter);
-app.use('/api/admin', adminRouter);
-
-// Health check
-app.get('/health', (_req, res) => {
-  res.json({ success: true, status: 'OK', message: 'WorkWyse API is running' });
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled promise rejection', {
+    reason: reason instanceof Error ? reason.message : String(reason),
+    stack: reason instanceof Error ? reason.stack : undefined,
+  });
 });
 
-// ─── 404 handler ────────────────────────────────────────────────────
-app.use((_req, res) => {
-  res.status(404).json({ success: false, message: 'Route not found' });
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception — shutting down after draining connections', {
+    error: error.message,
+    stack: error.stack,
+  });
+  // The process state can no longer be trusted, so drain and let App
+  // Service start a fresh instance rather than serving from a broken one.
+  void shutdown('uncaughtException', 1);
 });
 
-// ─── Centralized Error Handler (must be LAST) ───────────────────────
-app.use(errorHandler);
+/**
+ * Graceful shutdown.
+ *
+ * Azure sends SIGTERM and then force-kills after a grace period, so the
+ * drain is bounded by its own timer: a hung keep-alive connection must not
+ * be able to hold the old instance open past the deadline.
+ */
+async function shutdown(signal: string, exitCode = 0): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
 
-// ─── TraceOps Express Middleware (after errorHandler) ───────────────
-if (env.TRACEOPS_ENDPOINT) {
-  TraceOps.express(app);
+  logger.info(`${signal} received — shutting down gracefully`);
+
+  const forceExit = setTimeout(() => {
+    logger.error('Graceful shutdown timed out — forcing exit');
+    process.exit(exitCode || 1);
+  }, 15_000);
+  // Do not let the timer itself keep the event loop alive.
+  forceExit.unref();
+
+  try {
+    if (server) {
+      await new Promise<void>((resolve) => server!.close(() => resolve()));
+    }
+    await disconnectDB();
+  } catch (error) {
+    logger.error('Error during shutdown', { error: (error as Error)?.message });
+  } finally {
+    clearTimeout(forceExit);
+    process.exit(exitCode);
+  }
 }
 
-// ─── Start Server ───────────────────────────────────────────────────
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));
+
+// ─── Start Server ────────────────────────────────────────────────────
 const startServer = async () => {
-  try {
-    await connectDB();
+  warnIfScaledOutWithMemoryStore();
 
-    const server = app.listen(env.PORT, () => {
-      logger.info(` Server running on port ${env.PORT} [${env.NODE_ENV}]`);
-      logger.info(`Health check: http://localhost:${env.PORT}/health`);
-      logger.info(` API Base: http://localhost:${env.PORT}/api`);
-    });
+  // Start listening first. connectDB retries in the background, and the
+  // readiness probe reports DEGRADED until it succeeds — so a slow database
+  // delays traffic rather than failing the container's startup probe.
+  server = app.listen(env.PORT, () => {
+    logger.info(`Server running on port ${env.PORT} [${env.NODE_ENV}]`);
+    logger.info(`Liveness:  http://localhost:${env.PORT}/health`);
+    logger.info(`Readiness: http://localhost:${env.PORT}/health/ready`);
+  });
 
-    // Graceful shutdown
-    const shutdown = async (signal: string) => {
-      logger.info(`${signal} received — shutting down gracefully`);
-      server.close(async () => {
-        await disconnectDB();
-        process.exit(0);
-      });
-    };
+  // Azure's front end idles connections at 240s; keep-alive must outlive it
+  // or the proxy reuses a socket the app has already closed, surfacing as
+  // sporadic 502s.
+  server.keepAliveTimeout = 120_000;
+  server.headersTimeout = 125_000;
+  // Cap how long a single request may occupy a socket.
+  server.requestTimeout = 60_000;
 
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
-    process.on('SIGINT', () => shutdown('SIGINT'));
-  } catch (error) {
-    logger.error('Failed to start server', { error });
-    process.exit(1);
-  }
+  await connectDB();
 };
 
-startServer();
+// Only bootstrap when executed directly, so importing this module (in tests
+// or scripts) does not open a port or a database connection.
+if (require.main === module) {
+  void startServer();
+}
 
+export { app, startServer, shutdown };
 export default app;

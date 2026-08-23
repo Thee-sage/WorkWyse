@@ -1,74 +1,116 @@
-import express from 'express';
-import { errorHandler } from '../../middleware/errorHandler';
+import express, { Application } from 'express';
 import jwt from 'jsonwebtoken';
+import env from '../../config/env';
+import { errorHandler } from '../../middleware/errorHandler';
 
 // Routes
 import jobsRouter from '../../routes/jobs';
 import uploadRouter from '../../routes/upload';
 
+export type Role = 'user' | 'admin' | 'moderator';
+
 /**
- * Create a minimal Express app for testing without a real DB connection.
- * Mirrors the production middleware stack (JSON parsing, error handler).
+ * Minimal Express app — body parsing, two routers, error handler.
+ *
+ * Kept for the unit-flavoured suites that only care about a controller's
+ * behaviour. Anything asserting on security middleware should use
+ * `createFullApp()` instead, which builds the real production stack.
  */
-export function createTestApp() {
+export function createTestApp(): Application {
   const app = express();
 
-  // Body parsing (match production config)
   app.use(express.json({ limit: '10kb' }));
   app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
-  // Routes
   app.use('/api/jobs', jobsRouter);
   app.use('/api/upload', uploadRouter);
 
-  // Error handler
   app.use(errorHandler);
 
   return app;
 }
 
-/** Test JWT secret — matches what tests inject into env */
-export const TEST_JWT_SECRET = 'a-test-secret-that-is-at-least-32-characters-long';
-export const TEST_REFRESH_SECRET = 'a-refresh-secret-that-is-at-least-32-characters-long!!';
-
 /**
- * Generate a valid ACCESS JWT for test requests.
- * Includes type: 'access' so the authenticate middleware accepts it.
+ * The real application, assembled exactly as production assembles it.
+ *
+ * Required by any test that asserts on helmet headers, CORS behaviour, the
+ * 404 handler, body-size limits, or health probes — none of which exist in
+ * the minimal app above. Imported lazily so a suite that mocks models can
+ * install its mocks before the route modules are pulled in.
  */
-export function generateTestToken(payload?: {
-  uid?: string;
-  username?: string;
-  role?: 'user' | 'admin';
-}): string {
-  const defaultPayload = {
-    uid: 'test-user-uid-123',
-    username: 'testuser',
-    role: 'user' as const,
-    type: 'access' as const,
-    ...payload,
-  };
-
-  return jwt.sign(defaultPayload, TEST_JWT_SECRET, { expiresIn: '1h' });
+export function createFullApp(): Application {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { createApp } = require('../../createApp');
+  return createApp();
 }
 
 /**
- * Generate a REFRESH JWT (type: 'refresh') for tests that verify
- * refresh tokens are rejected when used as access tokens.
+ * Secrets come from config/env, which src/tests/setup/testEnv.ts seeds.
+ * Reading them here rather than redeclaring the literals keeps signing and
+ * verification from drifting apart.
  */
-export function generateRefreshToken(payload?: {
+export const TEST_JWT_SECRET = env.JWT_SECRET;
+export const TEST_REFRESH_SECRET = env.JWT_REFRESH_SECRET;
+
+export interface TokenOverrides {
   uid?: string;
   username?: string;
-}): string {
+  role?: Role;
+  /**
+   * Defaults to true. The `requireVerified` middleware gates every write
+   * endpoint on this claim, so a token without it produces a 403 long before
+   * the request reaches validation — which is what silently broke the
+   * evidence and vote suites when that middleware was introduced.
+   */
+  isEmailVerified?: boolean;
+  expiresIn?: string;
+  secret?: string;
+}
+
+/** Generate a valid ACCESS JWT for test requests. */
+export function generateTestToken(overrides: TokenOverrides = {}): string {
+  const {
+    uid = 'test-user-uid-123',
+    username = 'testuser',
+    role = 'user',
+    isEmailVerified = true,
+    expiresIn = '1h',
+    secret = TEST_JWT_SECRET,
+  } = overrides;
+
   return jwt.sign(
-    {
-      uid: payload?.uid ?? 'test-user-uid-123',
-      username: payload?.username ?? 'testuser',
-      role: 'user',
-      type: 'refresh',
-    },
-    TEST_REFRESH_SECRET,
-    { expiresIn: '7d' }
+    { uid, username, role, isEmailVerified, type: 'access' },
+    secret,
+    { expiresIn: expiresIn as any }
   );
+}
+
+/** Generate a REFRESH JWT (type: 'refresh'), signed with the refresh secret. */
+export function generateRefreshToken(overrides: TokenOverrides = {}): string {
+  const {
+    uid = 'test-user-uid-123',
+    username = 'testuser',
+    role = 'user',
+    isEmailVerified = true,
+    expiresIn = '7d',
+    secret = TEST_REFRESH_SECRET,
+  } = overrides;
+
+  return jwt.sign(
+    { uid, username, role, isEmailVerified, type: 'refresh' },
+    secret,
+    { expiresIn: expiresIn as any }
+  );
+}
+
+/** Convenience: an access token for an account that never confirmed its OTP. */
+export function generateUnverifiedToken(overrides: TokenOverrides = {}): string {
+  return generateTestToken({ ...overrides, isEmailVerified: false });
+}
+
+/** Authorization header tuple, for readability at call sites. */
+export function bearer(token: string): [string, string] {
+  return ['Authorization', `Bearer ${token}`];
 }
 
 /** Magic byte buffers for testing */

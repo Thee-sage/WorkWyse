@@ -51,8 +51,11 @@ export const voteSchema = {
 
 export const addReviewSchema = {
   body: z.object({
-    rating: z.number().int().min(1).max(5, 'Rating must be between 1 and 5'),
+    rating: z.number().int().min(1).max(5, 'Rating must be between 1 and 5').optional(),
     comment: z.string().min(1, 'Comment is required').max(2000),
+    stage: z.enum(['applied', 'interviewed', 'offered']).optional(),
+    outcome: z.enum(['no_response', 'rejected', 'on_hold', 'hired']).optional(),
+    salaryQuoted: z.string().max(100).optional(),
   }),
 };
 
@@ -72,5 +75,34 @@ export const jobIdParamSchema = {
 export const companyParamSchema = {
   params: z.object({
     company: z.string().min(1, 'Company name is required'),
+  }),
+};
+
+export const addEvidenceSchema = {
+  body: evidenceItemSchema,
+};
+
+export const evidenceIdParamSchema = {
+  params: z.object({
+    id: objectIdSchema,
+    evidenceId: objectIdSchema,
+  }),
+};
+
+export const updateEvidenceStatusSchema = {
+  body: z.object({
+    status: z.enum(['verified', 'unverifiable', 'redacted'], {
+      message: 'Status must be verified, unverifiable, or redacted',
+    }),
+    note: z.string().max(1000).optional(),
+  }),
+};
+
+export const registryListingSchema = {
+  query: z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    signal: z.enum(['dead', 'repost', 'accounts', 'thin', 'fake']).optional(),
+    search: z.string().max(200).optional(),
   }),
 };

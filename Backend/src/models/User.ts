@@ -15,6 +15,9 @@ export interface IUser extends Document {
   linkedinDisplayName?: string;
   linkedinAvatarUrl?: string;
   linkedinVerifiedAt?: Date;
+  // Job records this user is watching — surfaces on their Profile and
+  // drives the "records I watch" notifications.
+  watchedJobs: mongoose.Types.ObjectId[];
 }
 
 const UserSchema = new Schema<IUser>(
@@ -35,6 +38,7 @@ const UserSchema = new Schema<IUser>(
     linkedinDisplayName: { type: String },
     linkedinAvatarUrl: { type: String },
     linkedinVerifiedAt: { type: Date },
+    watchedJobs: { type: [Schema.Types.ObjectId], ref: 'Job', default: [] },
   },
   { timestamps: true }
 );

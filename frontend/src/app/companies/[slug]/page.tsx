@@ -1,248 +1,232 @@
-'use client';
-import { use, useState, useEffect } from "react";
+"use client";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
-import { ArrowLeft, Building2, Globe, FileText, ThumbsUp, ThumbsDown, MapPin, Clock, AlertTriangle, CheckCircle, Flag, ArrowRight, Star } from "lucide-react";
 import { api, ApiError } from "../../../lib/api";
-import { Company, Job } from "../../../types/user";
-import { ScrollReveal } from "../../../components/ui/ScrollReveal";
-import { TrustScoreBadge } from "../../../components/ui/TrustScoreBadge";
+import { useAuth } from "../../../components/AuthContext";
 import { useToast } from "../../../components/ui/Toast";
+import { Company, CompanyPatternMonth, CompanyReview, CompanyStats, Job } from "../../../types/user";
+import { formatDateMono, initials, quickRecordLabel } from "../../../lib/record";
+import { Mono, Panel, StatRow, Tab, PrimaryButton, SecondaryButton, stateInk } from "../../../components/ui/primitives";
 
-function statusFromJob(job: Job): "ghost" | "suspicious" | "legitimate" {
-  if (job.isFake) return "ghost";
-  const ratio = job.upvotes / (job.upvotes + job.downvotes + 1);
-  return ratio > 0.6 ? "legitimate" : "suspicious";
-}
-
-function trustScoreFromJob(job: Job): number {
-  const total = job.upvotes + job.downvotes;
-  if (total === 0) return 50;
-  return Math.round((job.upvotes / total) * 100);
-}
-
-const statusConfig = {
-  ghost: { label: "Ghost Job", icon: AlertTriangle, color: "text-red-600 bg-red-50" },
-  legitimate: { label: "Legitimate", icon: CheckCircle, color: "text-emerald-600 bg-emerald-50" },
-  suspicious: { label: "Suspicious", icon: Flag, color: "text-amber-600 bg-amber-50" },
-};
+type CompanyTab = "listings" | "reviews" | "patterns";
 
 export default function CompanyProfilePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
-  const [company, setCompany] = useState<Company | null>(null);
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
+  const { isAuthenticated } = useAuth();
   const toast = useToast();
 
+  const [company, setCompany] = useState<Company | null>(null);
+  const [stats, setStats] = useState<CompanyStats | null>(null);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [reviews, setReviews] = useState<CompanyReview[]>([]);
+  const [patterns, setPatterns] = useState<CompanyPatternMonth[]>([]);
+  const [tab, setTab] = useState<CompanyTab>("listings");
+  const [notFound, setNotFound] = useState(false);
+  const [reviewText, setReviewText] = useState("");
+  const [posting, setPosting] = useState(false);
+
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const res = await api.companies.get(slug);
-        setCompany(res.data);
+    api.companies.get(slug).then((r) => setCompany(r.data)).catch(() => setNotFound(true));
+    api.companies.stats(slug).then((r) => setStats(r.data)).catch(() => {});
+  }, [slug]);
 
-        // Get jobs for this company
-        const jobRes = await api.jobs.list({ page: 1, limit: 20, search: res.data.name });
-        const jobRaw = jobRes as unknown as { data: Job[] };
-        const allJobs = jobRaw.data ?? (jobRes.data as unknown as Job[]);
-        // Filter by exact company name match
-        setJobs(allJobs.filter(j => j.company.toLowerCase() === res.data.name.toLowerCase()));
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 404) {
-          setNotFound(true);
-        } else {
-          toast.error('Failed to load company');
-        }
-      } finally {
-        setLoading(false);
-      }
+  useEffect(() => {
+    if (!company) return;
+    if (tab === "listings") api.jobs.list({ limit: 50 }).then((r) => setJobs(r.data.filter((j) => j.company.toLowerCase() === company.name.toLowerCase())));
+    if (tab === "reviews") api.companies.reviews(slug, { limit: 50 }).then((r) => setReviews(r.data));
+    if (tab === "patterns") api.companies.patterns(slug).then((r) => setPatterns(r.data));
+  }, [tab, company, slug]);
+
+  async function submitReview() {
+    if (!reviewText.trim()) return;
+    setPosting(true);
+    try {
+      const res = await api.companies.addReview(slug, { comment: reviewText.trim() });
+      setReviews((prev) => [res.data, ...prev]);
+      setReviewText("");
+      toast.success("Account published");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not publish your account");
+    } finally {
+      setPosting(false);
     }
-    fetchData();
-  }, [slug, toast]);
-
-  if (loading) {
-    return (
-      <div className="pt-36 pb-24">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="h-64 rounded-xl border border-border animate-pulse" style={{ backgroundColor: "var(--card)" }} />
-        </div>
-      </div>
-    );
   }
 
-  if (notFound || !company) {
-    return (
-      <div className="pt-36 pb-24 text-center">
-        <div className="max-w-md mx-auto px-6">
-          <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: "2rem", fontWeight: 600 }}>Company Not Found</h1>
-          <p className="mt-3" style={{ fontSize: "0.9rem", color: "var(--muted-foreground)" }}>This company file does not exist in our archive.</p>
-          <Link href="/companies" className="inline-flex items-center gap-2 mt-6" style={{ fontSize: "0.9rem", color: "var(--accent)" }}>
-            <ArrowLeft size={16} /> Back to companies
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  const trustPct = Math.round((company.averageRating / 5) * 100);
-  const ghostCount = jobs.filter(j => j.isFake).length;
-  const legitimateCount = jobs.filter(j => !j.isFake).length;
-  const suspiciousCount = jobs.filter(j => {
-    if (j.isFake) return false;
-    const ratio = j.upvotes / (j.upvotes + j.downvotes + 1);
-    return ratio <= 0.6;
-  }).length;
+  if (notFound) return <div className="px-8 py-16 text-muted">This company could not be found.</div>;
+  if (!company) return <div className="px-8 py-16 text-muted">Loading…</div>;
 
   return (
-    <>
-      <div className="pt-28 md:pt-32">
-        <div className="max-w-6xl mx-auto px-6">
-          <Link href="/companies" className="inline-flex items-center gap-2 hover:opacity-80 transition-opacity" style={{ fontSize: "0.85rem", color: "var(--muted-foreground)" }}>
-            <ArrowLeft size={14} /> Back to companies
-          </Link>
-        </div>
+    <div>
+      <div className="flex items-center gap-2 px-4 md:px-8 py-2.5 border-b border-border font-mono text-[10px] tracking-[0.06em] text-muted-foreground overflow-x-auto whitespace-nowrap">
+        <Link href="/companies" className="text-accent">COMPANIES</Link>
+        <span className="text-faintest">›</span>
+        <span className="text-ink">{company.name.toUpperCase()}</span>
+        <span className="ml-auto hidden sm:inline">COMPANY RECORD · TRACKED SINCE {formatDateMono(company.createdAt)}</span>
       </div>
 
-      {/* Company Header */}
-      <section className="pt-6 pb-12">
-        <div className="max-w-6xl mx-auto px-6">
-          <ScrollReveal>
-            <div className="bg-card rounded-xl border border-border p-8 md:p-10 shadow-sm relative overflow-hidden">
-              <div className="absolute top-0 left-8 px-4 py-1.5 rounded-b-md border-x border-b border-border" style={{ fontSize: "0.65rem", fontWeight: 500, letterSpacing: "0.05em", backgroundColor: "var(--secondary)" }}>
-                COMPANY FILE
-              </div>
-              <div className="mt-4 flex flex-col md:flex-row items-start gap-6 md:gap-10">
-                <div className="w-16 h-16 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: "var(--muted)" }}>
-                  <Building2 size={32} style={{ color: "var(--muted-foreground)" }} />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-4 flex-wrap">
-                    <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.75rem", fontWeight: 600 }}>{company.name}</h1>
-                    <TrustScoreBadge score={trustPct} size="md" />
-                  </div>
-                  <div className="flex flex-wrap gap-4 mt-3" style={{ fontSize: "0.85rem", color: "var(--muted-foreground)" }}>
-                    {company.industry && <span className="flex items-center gap-1.5"><Building2 size={14} /> {company.industry}</span>}
-                    {company.website && (
-                      <a href={company.website.startsWith('http') ? company.website : `https://${company.website}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:opacity-80">
-                        <Globe size={14} /> {company.website}
-                      </a>
-                    )}
-                  </div>
-                  {company.description && (
-                    <p className="mt-3" style={{ fontSize: "0.9rem", lineHeight: 1.7, color: "var(--muted-foreground)" }}>{company.description}</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="my-6 border-t border-dashed border-border" />
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[
-                  { label: "Total Reports", value: company.totalReports, icon: <FileText size={16} style={{ color: "var(--muted-foreground)" }} /> },
-                  { label: "Avg Rating", value: `${company.averageRating.toFixed(1)}/5`, icon: <Star size={16} className="text-amber-500" /> },
-                  { label: "Trust Score", value: `${trustPct}%`, icon: trustPct >= 70 ? <CheckCircle size={16} className="text-emerald-600" /> : <AlertTriangle size={16} className="text-amber-500" /> },
-                  { label: "Job Listings", value: jobs.length, icon: <FileText size={16} style={{ color: "var(--accent)" }} /> },
-                ].map(metric => (
-                  <div key={metric.label} className="p-4 rounded-lg text-center" style={{ backgroundColor: "var(--background)" }}>
-                    <div className="flex items-center justify-center mb-2">{metric.icon}</div>
-                    <p style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.35rem", fontWeight: 600 }}>{metric.value}</p>
-                    <p style={{ fontSize: "0.75rem", color: "var(--muted-foreground)" }}>{metric.label}</p>
-                  </div>
-                ))}
-              </div>
-
-              {trustPct < 30 && (
-                <div className="absolute bottom-6 right-8 pointer-events-none select-none" style={{ fontFamily: "'Playfair Display', serif", fontSize: "4rem", fontWeight: 700, transform: "rotate(-10deg)", opacity: 0.03 }}>FLAGGED</div>
-              )}
-            </div>
-          </ScrollReveal>
-        </div>
-      </section>
-
-      {/* Report Breakdown */}
-      {jobs.length > 0 && (
-        <section className="pb-12">
-          <div className="max-w-6xl mx-auto px-6">
-            <ScrollReveal>
-              <div className="bg-card rounded-xl border border-border p-6 md:p-8">
-                <h3 className="mb-5" style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.15rem", fontWeight: 600 }}>Report Breakdown</h3>
-                <div className="grid grid-cols-3 gap-4">
-                  {[
-                    { label: "Ghost Jobs", count: ghostCount, color: "bg-red-50 text-red-700 border-red-200" },
-                    { label: "Suspicious", count: suspiciousCount, color: "bg-amber-50 text-amber-700 border-amber-200" },
-                    { label: "Legitimate", count: legitimateCount, color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-                  ].map(cat => (
-                    <div key={cat.label} className={`p-4 rounded-lg border text-center ${cat.color}`}>
-                      <p style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.5rem", fontWeight: 600 }}>{cat.count}</p>
-                      <p style={{ fontSize: "0.8rem" }}>{cat.label}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </ScrollReveal>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] border-b border-border-strong">
+        <div className="px-4 md:px-8 py-9 md:py-10 lg:border-r border-border">
+          <div className="flex items-center gap-3">
+            <span className="w-[34px] h-[34px] bg-ink text-background font-mono text-[12px] flex items-center justify-center shrink-0">
+              {initials(company.name)}
+            </span>
+            <h1 className="text-[30px] md:text-[40px] leading-none tracking-[-0.035em] font-bold">{company.name}</h1>
           </div>
-        </section>
+          <div className="mt-3.5 flex items-center gap-2.5 text-[14.5px] text-ink-soft flex-wrap">
+            {company.industry && <span>{company.industry}</span>}
+            {company.website && (
+              <>
+                <span className="text-faintest">·</span>
+                <a href={company.website} target="_blank" rel="noopener noreferrer" className="text-accent">{company.website}</a>
+              </>
+            )}
+            <span className="font-mono text-[10px] tracking-[0.08em] border border-border-mid text-muted-foreground px-1.5 py-0.5">
+              NOT A VERIFIED PROFILE
+            </span>
+          </div>
+
+          {company.description && (
+            <p className="mt-6 font-serif text-[18px] md:text-[20px] leading-[1.5] max-w-[52ch] text-pretty">{company.description}</p>
+          )}
+
+          {stats && (
+            <p className="mt-4 font-serif text-[15px] md:text-[16.5px] leading-[1.65] text-muted max-w-[58ch]">
+              {stats.listingsTracked} listing{stats.listingsTracked === 1 ? "" : "s"} tracked, {stats.openReports} with open
+              reports, {stats.confirmedHires} confirmed hire{stats.confirmedHires === 1 ? "" : "s"}. That pattern is worth
+              knowing before you apply — it is not proof of bad faith either way.
+            </p>
+          )}
+
+          <div className="mt-6 p-4 border border-dashed border-faint flex items-center gap-4 flex-wrap">
+            <Mono>RIGHT OF REPLY</Mono>
+            <span className="flex-1 text-[13.5px] text-ink-soft min-w-[200px]">
+              {stats && stats.employerReplies > 0
+                ? `${company.name} has replied to at least one report on record.`
+                : `${company.name} has a standing invitation to respond to any report filed against their listings.`}
+            </span>
+            <Link href="/about?section=moderation" className="font-mono text-[10px] tracking-[0.08em] text-accent whitespace-nowrap">
+              HOW REPLIES WORK →
+            </Link>
+          </div>
+        </div>
+
+        {stats && (
+          <div className="px-4 md:px-8 py-9 md:py-10">
+            <Mono>THE ACCUMULATED RECORD</Mono>
+            <div className="mt-4 flex flex-col">
+              <StatRow label="Listings tracked" value={stats.listingsTracked} />
+              <StatRow label="Still posted somewhere" value={stats.stillPosted} />
+              <StatRow label="Open reports" value={stats.openReports} valueClassName={stats.openReports ? "text-amber-ink" : ""} />
+              <StatRow label="First-hand accounts" value={stats.firstHandAccounts} />
+              <StatRow label="Evidence items published" value={stats.evidenceItems} />
+              <StatRow label="Confirmed hires" value={stats.confirmedHires} valueClassName={stats.confirmedHires ? "text-accent" : ""} />
+              <StatRow label="Employer responses" value={stats.employerReplies || "none"} valueClassName={!stats.employerReplies ? "text-muted-foreground !font-normal" : ""} last />
+            </div>
+            <div className="mt-4 p-3.5 bg-panel">
+              <p className="text-[12px] leading-[1.6] text-muted">
+                Treat these numbers as a description of our record, not a measure of the company.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center px-4 md:px-8 border-b border-border-strong overflow-x-auto">
+        <Tab active={tab === "listings"} onClick={() => setTab("listings")} count={stats?.listingsTracked}>Listings</Tab>
+        <Tab active={tab === "reviews"} onClick={() => setTab("reviews")} count={stats?.companyReviews}>What people said</Tab>
+        <Tab active={tab === "patterns"} onClick={() => setTab("patterns")}>Patterns over time</Tab>
+      </div>
+
+      {tab === "listings" && (
+        <div>
+          {jobs.length === 0 ? (
+            <div className="px-4 md:px-8 py-8 text-muted text-sm">No listings tracked for this company yet.</div>
+          ) : (
+            jobs.map((job) => {
+              const { label, tone } = quickRecordLabel(job);
+              return (
+                <Link key={job._id} href={`/registry/${job._id}`} className="flex flex-col sm:flex-row gap-2 sm:gap-6 px-4 md:px-8 py-4 border-b border-border-soft hover:bg-panel !no-underline text-inherit">
+                  <div className="flex-1">
+                    <div className="text-[16px] font-semibold">{job.title}</div>
+                    <div className="mt-1 text-[12.5px] text-muted">Posted {formatDateMono(job.createdAt)} · {job.location}</div>
+                  </div>
+                  <span className={`font-mono text-[9.5px] tracking-[0.08em] ${stateInk(tone)}`}>{label.toUpperCase()}</span>
+                </Link>
+              );
+            })
+          )}
+        </div>
       )}
 
-      {/* Recent Reports */}
-      <section className="pb-24 md:pb-32">
-        <div className="max-w-6xl mx-auto px-6">
-          <ScrollReveal>
-            <h3 className="mb-6" style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.15rem", fontWeight: 600 }}>Job Reports for {company.name}</h3>
-          </ScrollReveal>
-          {jobs.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {jobs.map((job, i) => {
-                const status = statusFromJob(job);
-                const trust = trustScoreFromJob(job);
-                const s = statusConfig[status];
-                const StatusIcon = s.icon;
-                const date = new Date(job.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+      {tab === "reviews" && (
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px]">
+          <div className="lg:border-r border-border">
+            {reviews.length === 0 ? (
+              <div className="px-4 md:px-8 py-8 text-muted text-sm">No company accounts filed yet.</div>
+            ) : (
+              reviews.map((r) => (
+                <div key={r._id} className="px-4 md:px-8 py-5 border-b border-border-soft">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-[7px] h-[7px] rounded-full bg-ink" />
+                    <span className="font-mono text-[10px] tracking-[0.1em]">{r.stage ? r.stage.replace("_", " ").toUpperCase() : "COMPANY ACCOUNT"}</span>
+                    <span className="ml-auto font-mono text-[10px] text-faint">{formatDateMono(r.createdAt)}</span>
+                  </div>
+                  <p className="mt-2.5 font-serif text-[17px] leading-[1.6] max-w-[58ch]">&ldquo;{r.comment}&rdquo;</p>
+                  <div className="mt-2.5 text-[13px] font-semibold">{r.author}</div>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="px-4 md:px-8 py-6">
+            <Mono>ADD YOURS</Mono>
+            {isAuthenticated ? (
+              <div className="mt-3.5 border border-border-mid bg-card">
+                <textarea
+                  value={reviewText}
+                  onChange={(e) => setReviewText(e.target.value)}
+                  placeholder="What was this company like to interview with or work for?"
+                  rows={4}
+                  className="w-full p-3 text-[13.5px] outline-none resize-none bg-transparent"
+                />
+                <div className="px-3 py-2.5 border-t border-border-soft">
+                  <PrimaryButton onClick={submitReview} disabled={posting || !reviewText.trim()} className="!text-[12.5px] !px-4 !py-2">
+                    {posting ? "Posting…" : "Publish account"}
+                  </PrimaryButton>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3.5 flex flex-col gap-2">
+                <Link href="/login"><SecondaryButton className="w-full">Worked or interviewed here</SecondaryButton></Link>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === "patterns" && (
+        <div className="px-4 md:px-8 py-8">
+          {patterns.length === 0 ? (
+            <div className="text-muted text-sm">Not enough tracked history yet to show a pattern.</div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4 items-end">
+              {patterns.map((p) => {
+                const max = Math.max(...patterns.map((x) => x.postings), 1);
                 return (
-                  <Link key={job._id} href={`/reports/${job._id}`} style={{ display: "block", height: "100%" }}>
-                    <motion.div
-                      className="bg-card rounded-xl border border-border p-6 relative overflow-hidden cursor-pointer group h-full"
-                      initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
-                      viewport={{ once: true, margin: "-60px" }}
-                      transition={{ duration: 0.45, delay: i * 0.08 }}
-                      whileHover={{ y: -4, boxShadow: "0 8px 28px -8px rgba(26,26,26,0.1)" }}
-                      style={{ boxShadow: "0 1px 3px 0 rgba(26,26,26,0.04)" }}
-                    >
-                      <div className="flex items-start justify-between mb-3 gap-3">
-                        <div className="min-w-0">
-                          <h3 style={{ fontSize: "1.05rem", fontFamily: "'Playfair Display', serif" }}>{job.title}</h3>
-                        </div>
-                        <div className="shrink-0 px-2 py-1 rounded-full text-xs font-medium" style={{
-                          backgroundColor: trust >= 70 ? "#dcfce7" : trust >= 40 ? "#fef9c3" : "#fee2e2",
-                          color: trust >= 70 ? "#166534" : trust >= 40 ? "#854d0e" : "#991b1b"
-                        }}>{trust}%</div>
-                      </div>
-                      <div className="flex flex-wrap gap-3 mb-4" style={{ fontSize: "0.8rem" }}>
-                        <span className="flex items-center gap-1" style={{ color: "var(--muted-foreground)" }}><MapPin size={13} /> {job.location}</span>
-                        <span className="flex items-center gap-1" style={{ color: "var(--muted-foreground)" }}><Clock size={13} /> {date}</span>
-                        <span className="flex items-center gap-1" style={{ color: "var(--muted-foreground)" }}><ThumbsUp size={13} /> {job.upvotes}</span>
-                      </div>
-                      <p style={{ fontSize: "0.85rem", lineHeight: 1.6, color: "var(--muted-foreground)", marginBottom: "1rem" }}>
-                        &ldquo;{job.description.slice(0, 100)}{job.description.length > 100 ? '...' : ''}&rdquo;
-                      </p>
-                      <div className="flex items-center justify-between mt-auto">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ${s.color}`} style={{ fontSize: "0.75rem", fontWeight: 500 }}>
-                          <StatusIcon size={12} /> {s.label}
-                        </span>
-                        <span className="flex items-center gap-1" style={{ fontSize: "0.8rem", color: "var(--accent)" }}>View <ArrowRight size={12} /></span>
-                      </div>
-                    </motion.div>
-                  </Link>
+                  <div key={p.month}>
+                    <div className="h-14 flex items-end">
+                      <div className="w-full bg-ink" style={{ height: `${Math.max(8, (p.postings / max) * 56)}px` }} />
+                    </div>
+                    <div className="mt-2 font-mono text-[10px] text-muted-foreground">{p.month}</div>
+                    <div className="mt-0.5 text-[12px] text-ink-soft">
+                      {p.postings} posted{p.reports ? `, ${p.reports} reported` : ""}
+                    </div>
+                  </div>
                 );
               })}
             </div>
-          ) : (
-            <div className="text-center py-12 bg-card rounded-xl border border-border">
-              <p style={{ fontSize: "0.9rem", color: "var(--muted-foreground)" }}>No reports found for this company yet.</p>
-            </div>
           )}
         </div>
-      </section>
-    </>
+      )}
+    </div>
   );
 }

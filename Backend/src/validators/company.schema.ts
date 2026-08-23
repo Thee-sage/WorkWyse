@@ -26,3 +26,11 @@ export const companyIdParamSchema = {
     id: objectIdSchema,
   }),
 };
+
+export const addCompanyReviewSchema = {
+  body: z.object({
+    comment: z.string().min(1, 'Comment is required').max(2000),
+    stage: z.enum(['applied', 'interviewed', 'offered', 'worked_here']).optional(),
+    outcome: z.enum(['no_response', 'rejected', 'on_hold', 'hired']).optional(),
+  }),
+};

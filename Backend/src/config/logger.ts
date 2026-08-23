@@ -19,10 +19,14 @@ const logger = winston.createLogger({
   format: env.NODE_ENV === 'production' ? prodFormat : devFormat,
   transports: [
     new winston.transports.Console(),
-    ...(env.NODE_ENV === 'production'
+    // File transports are opt-in via LOG_TO_FILE. An Azure App Service
+    // container has an ephemeral and sometimes read-only application
+    // directory, so an unconditional file transport can throw on write or
+    // quietly fill the instance disk. stdout is what App Service collects.
+    ...(env.LOG_TO_FILE
       ? [
-          new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
-          new winston.transports.File({ filename: 'logs/combined.log' }),
+          new winston.transports.File({ filename: 'logs/error.log', level: 'error', maxsize: 5_242_880, maxFiles: 3 }),
+          new winston.transports.File({ filename: 'logs/combined.log', maxsize: 5_242_880, maxFiles: 3 }),
         ]
       : []),
   ],

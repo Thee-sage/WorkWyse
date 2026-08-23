@@ -1,5 +1,8 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { assertUrlIsFetchable, SsrfBlockedError } from '../utils/urlGuard';
+import { ApiError } from '../utils/ApiError';
+import logger from '../config/logger';
 
 // --- Types ---
 
@@ -85,6 +88,7 @@ const SOURCE_MAP: Record<string, JobSource> = {
 class JobExtractorService {
   private static readonly TIMEOUT_MS = 10000;
   private static readonly MAX_CONTENT_LENGTH = 5 * 1024 * 1024;
+  private static readonly MAX_REDIRECTS = 5;
 
   static async extract(jobUrl: string): Promise<ExtractionResult> {
     const failResult: ExtractionResult = {
@@ -147,7 +151,10 @@ class JobExtractorService {
       }
 
       return { detected, source, data, reason, validation: { isValid, confidence } };
-    } catch {
+    } catch (err) {
+      // A blocked SSRF attempt must surface as a 400 rather than being
+      // flattened into the generic "fill it in manually" fallback.
+      if (err instanceof ApiError) throw err;
       return { ...failResult, reason: 'An unexpected error occurred. Please fill in manually.' };
     }
   }
@@ -184,23 +191,68 @@ class JobExtractorService {
 
   private static async fetchPage(url: string): Promise<{ html: string | null; status?: number }> {
     try {
-      const response = await axios.get(url, {
-        timeout: this.TIMEOUT_MS,
-        maxContentLength: this.MAX_CONTENT_LENGTH,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-          'Accept-Encoding': 'gzip, deflate',
-        },
-        maxRedirects: 5,
-        validateStatus: () => true,
-      });
+      // Redirects are followed by hand so that every hop is re-validated.
+      // Letting axios follow them would only check the first URL, and a
+      // 302 to http://169.254.169.254/ is the standard SSRF bypass.
+      let currentUrl = url;
 
-      const html = typeof response.data === 'string' ? response.data : null;
-      const ok = response.status >= 200 && response.status < 400;
-      return { html: ok ? html : null, status: response.status };
-    } catch {
+      for (let hop = 0; hop <= this.MAX_REDIRECTS; hop++) {
+        const { url: safeUrl } = await assertUrlIsFetchable(currentUrl);
+
+        const response = await axios.get(safeUrl.toString(), {
+          timeout: this.TIMEOUT_MS,
+          maxContentLength: this.MAX_CONTENT_LENGTH,
+          maxBodyLength: this.MAX_CONTENT_LENGTH,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+          },
+          maxRedirects: 0,
+          validateStatus: () => true,
+          responseType: 'text',
+          transformResponse: (body) => body,
+        });
+
+        const status = response.status;
+
+        if (status >= 300 && status < 400) {
+          const location = (response.headers as any)?.location;
+          if (!location) return { html: null, status };
+          // Relative redirects resolve against the hop that issued them.
+          currentUrl = new URL(String(location), safeUrl).toString();
+          continue;
+        }
+
+        if (status < 200 || status >= 400) {
+          return { html: null, status };
+        }
+
+        // Only parse markup. Without this the extractor would happily read
+        // JSON or plaintext from an internal service and echo it back to
+        // the caller through the title/description fields.
+        const contentType = String((response.headers as any)?.['content-type'] ?? '');
+        if (contentType && !/(text\/html|application\/xhtml\+xml|text\/plain)/i.test(contentType)) {
+          return { html: null, status };
+        }
+
+        const html = typeof response.data === 'string' ? response.data : null;
+        return { html, status };
+      }
+
+      // Redirect budget exhausted.
+      return { html: null };
+    } catch (err) {
+      if (err instanceof SsrfBlockedError) {
+        logger.warn('Security: blocked SSRF attempt via job URL extractor', {
+          url,
+          reason: err.reason,
+        });
+        throw ApiError.badRequest(
+          'That URL could not be fetched. Please use a public job posting link.'
+        );
+      }
       return { html: null };
     }
   }

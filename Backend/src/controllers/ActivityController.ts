@@ -7,6 +7,19 @@ import { ApiError } from '../utils/ApiError';
 import { ActivityAction, ActivityTargetType } from '../models/ActivityLog';
 
 const ActivityController = {
+  /** Public transparency feed for the Activity screen. */
+  getFeed: catchAsync(async (req: Request, res: Response) => {
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 30;
+    const result = await ActivityLogService.getFeed({ page, limit });
+    ApiResponse.paginated(res, result.data, {
+      page: result.page,
+      limit,
+      total: result.total,
+      totalPages: result.totalPages,
+    });
+  }),
+
   getForTarget: catchAsync(async (req: Request, res: Response) => {
     const { targetType, targetId } = req.params as {
       targetType: ActivityTargetType;
