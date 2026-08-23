@@ -84,3 +84,7 @@ scratch.*
 .claude/
 .cursor/
 *.local.json
+
+# Azure publish profile (contains deployment credentials)
+PUBLISH-PROFILE.txt
+*.PublishSettings
