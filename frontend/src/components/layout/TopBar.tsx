@@ -6,6 +6,7 @@ import { useAuth } from "../AuthContext";
 import { api } from "../../lib/api";
 import SubNav from "./SubNav";
 import AccountMenu from "./AccountMenu";
+import MobileNav from "./MobileNav";
 
 export default function TopBar() {
   const { user, isAuthenticated } = useAuth();
@@ -58,25 +59,42 @@ export default function TopBar() {
           <span className="font-mono text-[9.5px] text-faintest">⏎</span>
         </form>
 
+        {/* On mobile this lives inside the drawer instead (see MobileNav),
+            so it doesn't compete for space with search/bell/avatar in a
+            52px row on a narrow phone. */}
         <Link
           href="/contribute"
-          className="font-mono text-[10px] tracking-[0.1em] border border-ink px-3 py-[7px] hover:bg-ink hover:text-background transition-colors shrink-0 !no-underline"
+          className="hidden md:inline-block font-mono text-[10px] tracking-[0.1em] border border-ink px-3 py-[7px] hover:bg-ink hover:text-background transition-colors shrink-0 !no-underline"
         >
           CONTRIBUTE
         </Link>
 
+        {/* Mobile-only: search and contribute move into the drawer, so this
+            pushes the hamburger to the far right the same way the desktop
+            search bar does with `ml-auto`. */}
+        <div className="md:hidden ml-auto flex items-center gap-4">
+          {isAuthenticated && (
+            <Link href="/notifications" className="relative font-mono text-[13px] text-ink-soft" aria-label="Notifications">
+              ◔
+              {unread > 0 && <span className="absolute -top-1 -right-1.5 w-[6px] h-[6px] rounded-full bg-amber" />}
+            </Link>
+          )}
+          {isAuthenticated && <AccountMenu />}
+          <MobileNav />
+        </div>
+
         {isAuthenticated ? (
-          <>
-            <Link href="/notifications" className="relative font-mono text-[11px] text-ink-soft shrink-0" aria-label="Notifications">
+          <div className="hidden md:flex items-center gap-5 shrink-0">
+            <Link href="/notifications" className="relative font-mono text-[11px] text-ink-soft" aria-label="Notifications">
               ◔
               {unread > 0 && (
                 <span className="absolute -top-1 -right-1.5 w-[6px] h-[6px] rounded-full bg-amber" />
               )}
             </Link>
             <AccountMenu />
-          </>
+          </div>
         ) : (
-          <div className="flex items-center gap-3 shrink-0 font-mono text-[10px] tracking-[0.08em]">
+          <div className="hidden md:flex items-center gap-3 shrink-0 font-mono text-[10px] tracking-[0.08em]">
             <Link href="/login">LOG IN</Link>
             <Link href="/register" className="border border-ink px-3 py-[7px] !no-underline hover:bg-ink hover:text-background transition-colors">
               REGISTER
@@ -84,7 +102,9 @@ export default function TopBar() {
           </div>
         )}
       </div>
-      <SubNav />
+      <div className="hidden md:block">
+        <SubNav />
+      </div>
     </div>
   );
 }

@@ -3,34 +3,41 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { api, ApiError } from "../../lib/api";
 import { Company } from "../../types/user";
-import { useToast } from "../../components/ui/Toast";
 import { initials } from "../../lib/record";
-import { Mono } from "../../components/ui/primitives";
+import { Mono, SecondaryButton } from "../../components/ui/primitives";
 
 type SortOption = "most-reports" | "highest-rating" | "a-z";
 
 export default function CompaniesPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
+  // A failed fetch is not the same thing as a genuinely empty result — the
+  // page previously had no error state at all, so a real outage rendered
+  // the same "No companies match yet" copy a normal empty database would.
+  // This is deliberately shown inline rather than as a toast: it's the
+  // page's core content that's missing, not a transient action result, and
+  // it needs a Retry a toast can't offer.
+  const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("a-z");
-  const toast = useToast();
 
   const fetchCompanies = useCallback(async (p: number) => {
     setLoading(true);
+    setError(null);
     try {
       const res = await api.companies.list({ page: p, limit: 40 });
       const raw = res as unknown as { data: Company[]; pagination: { totalPages: number } };
       setCompanies(raw.data);
       setTotalPages(raw.pagination?.totalPages ?? 1);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to load companies");
+      setCompanies([]);
+      setError(err instanceof ApiError ? err.message : "Something went wrong loading companies.");
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, []);
 
   useEffect(() => { fetchCompanies(page); }, [fetchCompanies, page]);
 
@@ -79,6 +86,16 @@ export default function CompaniesPage() {
 
       {loading ? (
         <div className="px-8 py-10 text-muted">Loading…</div>
+      ) : error ? (
+        <div className="px-8 py-10 flex flex-col items-start gap-3 border-t border-border-soft bg-panel-destructive">
+          <div>
+            <p className="text-[14px] font-semibold text-destructive">Couldn&apos;t load companies</p>
+            <p className="mt-1 text-[13px] text-muted">{error}</p>
+          </div>
+          <SecondaryButton onClick={() => fetchCompanies(page)} className="!border-destructive !text-destructive">
+            Retry
+          </SecondaryButton>
+        </div>
       ) : filtered.length === 0 ? (
         <div className="px-8 py-10 text-muted">No companies match yet.</div>
       ) : (

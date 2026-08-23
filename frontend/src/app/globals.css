@@ -32,6 +32,9 @@
   --panel-teal: #eef6f2;
   --panel-teal-soft: #f7fbf9;
   --panel-amber: #fdf8ef;
+  /* Soft destructive background — same "tint of the ink color" pattern as
+     panel-teal/panel-amber, used for error toasts and inline error states. */
+  --panel-destructive: #fbf1ef;
 
   --accent: #0f6b60;
   --accent-foreground: #f5f8f5;
@@ -70,6 +73,7 @@
   --color-panel-teal: var(--panel-teal);
   --color-panel-teal-soft: var(--panel-teal-soft);
   --color-panel-amber: var(--panel-amber);
+  --color-panel-destructive: var(--panel-destructive);
 
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
@@ -156,4 +160,16 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--faint);
+}
+
+/* Toast entrance — see components/ui/Toast.tsx */
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
