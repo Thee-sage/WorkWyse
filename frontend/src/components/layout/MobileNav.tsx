@@ -3,10 +3,13 @@ import { useEffect, useRef, useState, FormEvent } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "../AuthContext";
+import { SearchIcon } from "../ui/primitives";
+import Logo from "../ui/Logo";
 
 interface NavItem {
   label: string;
   href: string;
+  hint?: string;
   match?: (path: string) => boolean;
   requiresAuth?: boolean;
 }
@@ -15,14 +18,24 @@ interface NavItem {
 // shared import because the two components render it very differently
 // (a horizontal scroller vs. a full-height drawer list) and having them
 // diverge slightly over time is more likely than one file serving both well.
-const ITEMS: NavItem[] = [
+//
+// The drawer has vertical room the tab strip does not, so each destination
+// carries a one-line hint saying what is actually there. "Activity" and
+// "Registry" are otherwise indistinguishable to someone who has never used
+// WorkWyse.
+const BROWSE: NavItem[] = [
   { label: "Home", href: "/", match: (p) => p === "/" },
-  { label: "Registry", href: "/registry", match: (p) => p.startsWith("/registry") },
-  { label: "Companies", href: "/companies", match: (p) => p.startsWith("/companies") },
-  { label: "Activity", href: "/activity", match: (p) => p.startsWith("/activity") },
-  { label: "Contribute", href: "/contribute", match: (p) => p.startsWith("/contribute") },
-  { label: "Your activity", href: "/profile", match: (p) => p.startsWith("/profile"), requiresAuth: true },
-  { label: "Notifications", href: "/notifications", match: (p) => p.startsWith("/notifications"), requiresAuth: true },
+  { label: "Registry", href: "/registry", hint: "Every listing we track", match: (p) => p.startsWith("/registry") },
+  { label: "Companies", href: "/companies", hint: "Every employer we track", match: (p) => p.startsWith("/companies") },
+  { label: "Activity", href: "/activity", hint: "Everything that changed, site-wide", match: (p) => p.startsWith("/activity") },
+];
+
+// "Your activity" is labelled "Your profile" for the same reason as in
+// SubNav — it sat next to the global "Activity" feed and read as a filter on
+// it. Route unchanged.
+const YOURS: NavItem[] = [
+  { label: "Your profile", href: "/profile", hint: "What you filed, watched, challenged", match: (p) => p.startsWith("/profile"), requiresAuth: true },
+  { label: "Notifications", href: "/notifications", hint: "What changed on your contributions", match: (p) => p.startsWith("/notifications"), requiresAuth: true },
   { label: "How this works", href: "/about", match: (p) => p.startsWith("/about") },
 ];
 
@@ -75,7 +88,7 @@ export default function MobileNav() {
     router.push(query.trim() ? `/registry?search=${encodeURIComponent(query.trim())}` : "/registry");
   }
 
-  const items = ITEMS.filter((item) => !item.requiresAuth || isAuthenticated);
+  const yours = YOURS.filter((item) => !item.requiresAuth || isAuthenticated);
 
   return (
     <>
@@ -107,7 +120,7 @@ export default function MobileNav() {
             className="absolute top-0 right-0 h-full w-[86%] max-w-[340px] bg-background border-l border-border-strong flex flex-col overflow-y-auto"
           >
             <div className="flex items-center justify-between px-4 h-[52px] border-b border-border-strong shrink-0">
-              <span className="text-[15px] font-bold tracking-[-0.025em]">Menu</span>
+              <Logo height={24} className="text-ink" />
               <button
                 onClick={() => setOpen(false)}
                 aria-label="Close menu"
@@ -117,11 +130,12 @@ export default function MobileNav() {
               </button>
             </div>
 
-            <form onSubmit={handleSearch} className="flex items-center gap-2.5 h-11 px-3.5 mx-4 mt-4 bg-card border border-border-mid shrink-0">
-              <span className="w-[9px] h-[9px] rounded-full border-[1.5px] border-faint shrink-0" />
+            <form onSubmit={handleSearch} role="search" className="flex items-center gap-2.5 h-11 px-3.5 mx-4 mt-4 bg-card border border-border-mid shrink-0 focus-within:border-ink transition-colors">
+              <SearchIcon size={13} className="text-faint" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
+                aria-label="Look up a job or a company"
                 placeholder="Look up a job or a company"
                 className="flex-1 min-w-0 bg-transparent text-[14px] placeholder:text-faint outline-none"
               />
@@ -130,22 +144,21 @@ export default function MobileNav() {
               </button>
             </form>
 
-            <nav className="mt-2 flex flex-col py-2">
-              {items.map((item) => {
-                const active = item.match ? item.match(pathname) : pathname.startsWith(item.href);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    role="menuitem"
-                    className={`!no-underline px-4 py-3.5 text-[15px] font-medium border-b border-border-soft transition-colors ${
-                      active ? "text-ink bg-panel" : "text-ink-soft"
-                    }`}
-                  >
-                    {item.label}
-                  </Link>
-                );
-              })}
+            <nav className="mt-4 flex flex-col">
+              <DrawerGroupLabel>THE RECORD</DrawerGroupLabel>
+              {BROWSE.map((item) => (
+                <DrawerLink key={item.href} item={item} pathname={pathname} />
+              ))}
+              {yours.length > 0 && (
+                <>
+                  <DrawerGroupLabel className="mt-4">
+                    {isAuthenticated ? "YOU" : "MORE"}
+                  </DrawerGroupLabel>
+                  {yours.map((item) => (
+                    <DrawerLink key={item.href} item={item} pathname={pathname} />
+                  ))}
+                </>
+              )}
             </nav>
 
             <div className="mt-auto p-4 border-t border-border-soft shrink-0 flex flex-col gap-2.5">
@@ -176,5 +189,35 @@ export default function MobileNav() {
         </div>
       )}
     </>
+  );
+}
+
+function DrawerGroupLabel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return (
+    <span className={`px-4 pb-2 font-mono text-[10px] tracking-[0.14em] text-muted-foreground ${className}`}>
+      {children}
+    </span>
+  );
+}
+
+/**
+ * A drawer row. Active is marked with a 2px accent bar on the leading edge —
+ * the vertical equivalent of SubNav's underline — because the previous
+ * background-tint-only treatment was easy to miss against the panel colour.
+ */
+function DrawerLink({ item, pathname }: { item: NavItem; pathname: string }) {
+  const active = item.match ? item.match(pathname) : pathname.startsWith(item.href);
+  return (
+    <Link
+      href={item.href}
+      role="menuitem"
+      aria-current={active ? "page" : undefined}
+      className={`!no-underline px-4 py-3 border-b border-border-soft border-l-2 transition-colors ${
+        active ? "text-ink bg-panel border-l-accent" : "text-ink-soft border-l-transparent"
+      }`}
+    >
+      <span className="block text-[15px] font-medium">{item.label}</span>
+      {item.hint && <span className="block mt-0.5 text-[12.5px] text-muted">{item.hint}</span>}
+    </Link>
   );
 }

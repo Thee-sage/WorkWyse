@@ -1,12 +1,45 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import TopBar from '@/components/layout/TopBar';
 import Footer from '@/components/layout/Footer';
 import { Providers } from '@/components/providers';
 
+const TITLE = "WorkWyse — A public record of what is known about job listings";
+const DESCRIPTION =
+  "WorkWyse collects what people can show about a job listing — accounts, evidence, automated checks — and keeps it attached to the claim it supports.";
+
 export const metadata: Metadata = {
-  title: "WorkWyse — A public record of what is known about job listings",
-  description: "WorkWyse collects what people can show about a job listing — accounts, evidence, automated checks — and keeps it attached to the claim it supports.",
+  title: TITLE,
+  description: DESCRIPTION,
+  applicationName: "WorkWyse",
+  manifest: "/site.webmanifest",
+  // app/favicon.ico is emitted automatically by the file convention, so only
+  // the two it does not cover are declared here. The SVG earns its place
+  // because it is the variant that flips to white in dark-mode browser tabs,
+  // and browsers prefer it over the .ico when both are offered.
+  icons: {
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+    apple: "/apple-touch-icon.png",
+  },
+  openGraph: {
+    title: TITLE,
+    description: DESCRIPTION,
+    siteName: "WorkWyse",
+    type: "website",
+    images: [{ url: "/brand/lockup-black@2x.png", alt: "WorkWyse" }],
+  },
+  twitter: {
+    card: "summary",
+    title: TITLE,
+    description: DESCRIPTION,
+    images: ["/brand/lockup-black@2x.png"],
+  },
+};
+
+// Matches the manifest's theme_color, so the installed app and the browser
+// chrome agree.
+export const viewport: Viewport = {
+  themeColor: "#000000",
 };
 
 export default function RootLayout({

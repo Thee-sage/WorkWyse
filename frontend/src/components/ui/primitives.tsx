@@ -25,6 +25,31 @@ export function Mono({
   );
 }
 
+/**
+ * Search mark for the lookup fields.
+ *
+ * Every search input previously used a hollow bordered circle as its leading
+ * icon — which is exactly the mark `Glyph kind="open"` uses to mean "nothing
+ * on record". The same shape carried two unrelated meanings depending on
+ * where you found it. This keeps the thin-stroke geometric style but adds the
+ * handle, so it reads as a search field and stops colliding with the legend.
+ */
+export function SearchIcon({ size = 11, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 12 12"
+      fill="none"
+      aria-hidden="true"
+      className={`shrink-0 ${className}`}
+    >
+      <circle cx="5" cy="5" r="3.6" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M7.7 7.7 11 11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 type RecordState = "answered" | "partly" | "open";
 
 /** The dot/square/diamond/dash legend used throughout to mark what kind of thing something is. */

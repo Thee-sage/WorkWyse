@@ -28,9 +28,23 @@ const envSchema = z.object({
   JWT_ACCESS_EXPIRY: z.string().default('15m'),
   JWT_REFRESH_EXPIRY: z.string().default('7d'),
 
-  // Email (Gmail SMTP)
-  GMAIL_USER: z.string().email('GMAIL_USER must be a valid email'),
-  GMAIL_APP_PASSWORD: z.string().min(1, 'GMAIL_APP_PASSWORD is required'),
+  // ─── Email ────────────────────────────────────────────────────────
+  // Resend is the preferred transport: it sends from the verified
+  // workwyse.tech domain (proper SPF/DKIM), which lands in inboxes far more
+  // reliably than Gmail SMTP and doesn't tie delivery to one personal
+  // mailbox's rate limits. Gmail is kept as a fallback so a developer
+  // without a Resend key can still run the app locally — see
+  // services/emailService.ts for the selection logic.
+  RESEND_API_KEY: z.string().default(''),
+  // Must be an address on a domain verified in Resend.
+  EMAIL_FROM: z.string().default('WorkWyse <noreply@workwyse.tech>'),
+
+  // Email fallback (Gmail SMTP). Optional now that Resend exists — but if
+  // neither transport is configured, the app refuses to start (see below),
+  // because silently dropping OTP emails would break registration in a way
+  // that looks like a mysterious client-side bug.
+  GMAIL_USER: z.string().default(''),
+  GMAIL_APP_PASSWORD: z.string().default(''),
 
   // CORS
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
@@ -127,6 +141,18 @@ if (env.JWT_SECRET === env.JWT_REFRESH_SECRET) {
   fatal.push(
     'JWT_SECRET and JWT_REFRESH_SECRET must be different — sharing one secret lets a ' +
       'refresh token be replayed as an access token if any type check is ever missed.'
+  );
+}
+
+// At least one working email transport is required. Registration depends on
+// OTP delivery, so booting without any configured sender would present as
+// "the signup form is broken" rather than as a config error.
+const hasResend = env.RESEND_API_KEY.length > 0;
+const hasGmail = env.GMAIL_USER.length > 0 && env.GMAIL_APP_PASSWORD.length > 0;
+if (!hasResend && !hasGmail) {
+  fatal.push(
+    'No email transport configured — set RESEND_API_KEY (preferred) or both ' +
+      'GMAIL_USER and GMAIL_APP_PASSWORD. Registration OTPs cannot be delivered without one.'
   );
 }
 

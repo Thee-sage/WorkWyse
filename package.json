@@ -1,9 +1,19 @@
 {
+  "name": "workwyse",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently --names \"backend,frontend\" --prefix-colors \"cyan,magenta\" --kill-others-on-fail \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "npm --prefix Backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "install:all": "npm install && npm --prefix Backend install && npm --prefix frontend install",
+    "build": "npm --prefix Backend run build && npm --prefix frontend run build"
+  },
   "dependencies": {
     "express-validator": "^7.2.1",
     "morgan": "^1.10.0"
   },
   "devDependencies": {
-    "@types/morgan": "^1.9.10"
+    "@types/morgan": "^1.9.10",
+    "concurrently": "^9.1.2"
   }
 }

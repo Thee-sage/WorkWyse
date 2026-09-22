@@ -88,3 +88,9 @@ scratch.*
 # Azure publish profile (contains deployment credentials)
 PUBLISH-PROFILE.txt
 *.PublishSettings
+
+# Azure publish credential scratch files
+.pubuser.txt
+.pubpass.txt
+.dlog2.json
+backend-deploy.zip

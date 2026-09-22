@@ -236,6 +236,52 @@ describe('Fail-fast configuration safety checks', () => {
     expect(result.errors).toMatch(/ALLOW_PRIVATE_NETWORK_FETCH/);
   });
 
+  it('refuses to start with no email transport configured', () => {
+    // Registration depends on OTP delivery. Booting with no sender would
+    // look like "the signup form is broken" rather than a config error.
+    const result = loadEnv({
+      ...BASE_ENV,
+      RESEND_API_KEY: '',
+      GMAIL_USER: '',
+      GMAIL_APP_PASSWORD: '',
+    });
+    expect(result.exited).toBe(true);
+    expect(result.errors).toMatch(/email transport/i);
+  });
+
+  it('accepts Resend alone as the email transport', () => {
+    const result = loadEnv({
+      ...BASE_ENV,
+      RESEND_API_KEY: 're_test_key_value',
+      GMAIL_USER: '',
+      GMAIL_APP_PASSWORD: '',
+    });
+    expect(result.exited).toBe(false);
+  });
+
+  it('accepts Gmail alone as the email transport', () => {
+    const result = loadEnv({
+      ...BASE_ENV,
+      RESEND_API_KEY: '',
+      GMAIL_USER: 'noreply@workwyse.com',
+      GMAIL_APP_PASSWORD: 'app-password',
+    });
+    expect(result.exited).toBe(false);
+  });
+
+  it('rejects a half-configured Gmail transport', () => {
+    // A user set without a password is a common copy-paste mistake and
+    // would otherwise fail only at the first send attempt.
+    const result = loadEnv({
+      ...BASE_ENV,
+      RESEND_API_KEY: '',
+      GMAIL_USER: 'noreply@workwyse.com',
+      GMAIL_APP_PASSWORD: '',
+    });
+    expect(result.exited).toBe(true);
+    expect(result.errors).toMatch(/email transport/i);
+  });
+
   it('refuses to start in production with no admin passphrase set', () => {
     // Without this, the admin surface would have no second factor at all
     // in the one environment that matters most.

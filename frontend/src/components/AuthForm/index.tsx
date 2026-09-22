@@ -5,6 +5,7 @@ import { api, setAccessToken, ApiError } from "../../lib/api";
 import { useAuth } from "../AuthContext";
 import { useToast } from "../ui/Toast";
 import { Mono, PrimaryButton } from "../ui/primitives";
+import Logo from "../ui/Logo";
 
 interface AuthFormProps {
   mode: "login" | "register";
@@ -81,7 +82,10 @@ export default function AuthForm({ mode, onAuth }: AuthFormProps) {
     <div className="grid grid-cols-1 lg:grid-cols-2 min-h-[calc(100vh-95px)]">
       <div className="hidden lg:flex flex-col justify-between bg-ink text-background px-12 py-14">
         <div>
-          <Mono className="!text-faint">WORKWYSE</Mono>
+          {/* Inherits `text-background` from the dark panel, so the mark comes
+              out white here without needing the separate white lockup file. */}
+          <Logo height={26} />
+
           <h1 className="mt-6 text-[40px] leading-[1.1] tracking-[-0.035em] font-bold max-w-[14ch]">
             {mode === "login" ? "Welcome back to the record." : "Add your name to the record."}
           </h1>

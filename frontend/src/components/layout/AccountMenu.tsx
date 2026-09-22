@@ -85,12 +85,18 @@ export default function AccountMenu() {
 
   return (
     <div ref={containerRef} className="relative shrink-0">
+      {/* The initials badge is the only entry point to settings, privacy and
+          logout, but looked like a static avatar. The ring on hover/open is
+          what tells a first-time user it opens something. */}
       <button
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="w-[26px] h-[26px] rounded-full bg-ink text-background font-mono text-[9.5px] flex items-center justify-center"
-        title={user.username}
+        className={`w-[26px] h-[26px] rounded-full bg-ink text-background font-mono text-[9.5px] flex items-center justify-center ring-offset-2 ring-offset-background transition-shadow hover:ring-2 hover:ring-border-mid ${
+          open ? "ring-2 ring-border-mid" : ""
+        }`}
+        aria-label={`Account menu for ${user.username}`}
+        title={`${user.username} — account, privacy and log out`}
       >
         {initials(user.username)}
       </button>
